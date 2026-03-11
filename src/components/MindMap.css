@@ -1,0 +1,83 @@
+.mindmap-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: 0.5rem 0 1rem;
+}
+
+.mindmap-center-row {
+    display: flex;
+    justify-content: center;
+}
+
+.mindmap-topic-card {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(99, 102, 241, 0.08));
+    border: 2px solid var(--accent-color);
+    border-radius: 1.5rem;
+    padding: 1rem 2.5rem;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.08);
+}
+
+.mindmap-connector-line {
+    width: 2px;
+    height: 2rem;
+    background: linear-gradient(to bottom, var(--accent-color), var(--border-color));
+    margin: 0 auto;
+}
+
+.mindmap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 1rem;
+    width: 100%;
+}
+
+.mindmap-branch-card {
+    border-radius: 1rem;
+    padding: 1.25rem;
+    border: 1px solid;
+    transition: transform 0.2s ease;
+}
+
+.mindmap-branch-card:hover {
+    transform: translateY(-3px);
+}
+
+.branch-header {
+    font-weight: 700;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.branch-details {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0;
+    margin: 0;
+}
+
+.branch-details li {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    line-height: 1.4;
+    padding-left: 1.1rem;
+    position: relative;
+}
+
+.branch-details li::before {
+    content: '→';
+    position: absolute;
+    left: 0;
+    color: var(--dot-color, var(--accent-color));
+    font-size: 0.75rem;
+    line-height: 1.6;
+}

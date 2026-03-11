@@ -1,0 +1,224 @@
+.upload-page {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    flex: 1;
+}
+
+.upload-container {
+    max-width: 600px;
+    width: 100%;
+    text-align: center;
+}
+
+.upload-title {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.upload-subtitle {
+    font-size: 1.125rem;
+    color: var(--text-secondary);
+    margin-bottom: 3rem;
+}
+
+.drop-zone {
+    background-color: var(--bg-secondary);
+    border: 2px dashed var(--border-color);
+    border-radius: 1.5rem;
+    padding: 4rem 2rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    min-height: 350px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.drop-zone:hover {
+    border-color: var(--accent-color);
+    background-color: rgba(99, 102, 241, 0.05);
+}
+
+.drop-zone.drag-active {
+    border-color: var(--accent-color);
+    background-color: rgba(99, 102, 241, 0.1);
+    transform: scale(1.02);
+}
+
+.drop-zone.file-selected {
+    border-style: solid;
+    cursor: default;
+}
+
+.file-input {
+    display: none;
+}
+
+.drop-zone-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.upload-icon {
+    color: var(--accent-color);
+    margin-bottom: 1rem;
+}
+
+.file-icon {
+    color: #38bdf8;
+    margin-bottom: 1rem;
+}
+
+.drop-zone-content h3 {
+    font-size: 1.5rem;
+    color: var(--text-primary);
+}
+
+.drop-zone-content p {
+    color: var(--text-secondary);
+}
+
+/* Progress styles */
+.upload-progress-container {
+    width: 100%;
+    max-width: 400px;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.progress-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background-color: rgba(255, 255, 255, 0.05);
+    padding: 1rem;
+    border-radius: 0.75rem;
+}
+
+.file-name {
+    flex: 1;
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+}
+
+.file-icon-small {
+    color: var(--text-secondary);
+}
+
+.success-icon {
+    color: #10b981;
+    animation: scaleIn 0.3s ease forwards;
+}
+
+.progress-bar-bg {
+    height: 8px;
+    background-color: var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background-color: var(--accent-color);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    position: relative;
+}
+
+.progress-bar-fill::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg,
+            rgba(255, 255, 255, 0) 0%,
+            rgba(255, 255, 255, 0.3) 50%,
+            rgba(255, 255, 255, 0) 100%);
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        transform: translateX(-100%);
+    }
+
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.upload-error {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background-color: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    color: #f87171;
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+}
+
+.progress-stages {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.stage-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--border-color);
+    transition: background-color 0.4s ease;
+}
+
+.stage-dot.active {
+    background-color: var(--accent-color);
+}
+
+.progress-text {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    animation: pulse-text 2s infinite;
+}
+
+@keyframes pulse-text {
+    0% {
+        opacity: 0.7;
+    }
+
+    50% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0.7;
+    }
+}
