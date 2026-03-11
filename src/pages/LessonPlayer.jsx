@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, SkipBack, SkipForward, ChevronLeft, Repeat, BookOpen } from 'lucide-react';
+import { API } from '../lib/api';
 import './LessonPlayer.css';
 
 /* ── Browser TTS fallback (used when ElevenLabs is not configured) ── */
@@ -47,7 +48,7 @@ async function fetchPexelsImage(keyword) {
     try {
         const controller = new AbortController();
         const t = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(`http://localhost:5000/search-image?q=${encodeURIComponent(keyword)}`, { signal: controller.signal });
+        const res = await fetch(`${API}/search-image?q=${encodeURIComponent(keyword)}`, { signal: controller.signal });
         clearTimeout(t);
         if (!res.ok) return null;
         const data = await res.json();
@@ -140,7 +141,7 @@ async function fetchAudio(text, language) {
     console.log('Text sent to audio generator:', text);
     console.log(`[Audio] Fetching ${language.toUpperCase()} audio | "${text.slice(0, 80)}..."`);
     try {
-        const res = await fetch('http://localhost:5000/generate-audio', {
+        const res = await fetch(`${API}/generate-audio`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, language }),

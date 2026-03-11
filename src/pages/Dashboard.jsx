@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API } from '../lib/api';
 import {
     Play, Clock, FileText, Search, BookOpen, UploadCloud,
     Bell, BarChart2, Layers, Trash2, RefreshCw
@@ -29,7 +30,7 @@ function Dashboard() {
         if (user) {
             try {
                 const token = await getToken();
-                const res = await fetch('http://localhost:5000/lessons', {
+                const res = await fetch(`${API}/lessons`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 if (res.ok) {
@@ -59,7 +60,7 @@ function Dashboard() {
         if (source === 'db') {
             try {
                 const token = await getToken();
-                await fetch(`http://localhost:5000/lessons/${lesson.id}`, {
+                await fetch(`${API}/lessons/${lesson.id}`, {
                     method: 'DELETE',
                     headers: { Authorization: `Bearer ${token}` }
                 });

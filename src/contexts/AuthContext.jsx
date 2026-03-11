@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react';
+import { API } from '../lib/api';
 
 const AuthContext = createContext({});
 
 const SESSION_KEY = 'learnflux_session';
-const API = 'http://localhost:5000';
 
 // ── Local auth fallback (when WorkOS is not configured) ─────────────
 const LOCAL_USERS_KEY = 'learnflux_users';

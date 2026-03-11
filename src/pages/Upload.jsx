@@ -2,6 +2,7 @@ import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UploadCloud, FileText, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import { API } from '../lib/api';
 import './Upload.css';
 
 function Upload() {
@@ -87,7 +88,7 @@ const uploadToServer = async (selectedFile) => {
   }, 400);
 
   try {
-    const response = await fetch("http://localhost:5000/upload", {
+    const response = await fetch(`${API}/upload`, {
       method: "POST",
       headers,
       body: formData
@@ -122,7 +123,7 @@ const uploadToServer = async (selectedFile) => {
 
     // Index document chunks for RAG (non-blocking — fires and forgets)
     if (lesson.documentText) {
-      fetch('http://localhost:5000/index', {
+      fetch(`${API}/index`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ docId: lesson.id, documentText: lesson.documentText }),

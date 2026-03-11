@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Send, Bot, User, ArrowLeft, AlertCircle, Database } from 'lucide-react';
+import { API } from '../lib/api';
 import './Tutor.css';
 
 function Tutor() {
@@ -35,7 +36,7 @@ function Tutor() {
         const toIndex = allLessons.filter(l => l.id && l.documentText);
         if (toIndex.length === 0) return;
         toIndex.forEach(l => {
-            fetch('http://localhost:5000/index', {
+            fetch(`${API}/index`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ docId: l.id, documentText: l.documentText }),
@@ -56,7 +57,7 @@ function Tutor() {
         setLoading(true);
 
         try {
-            const res = await fetch('http://localhost:5000/ask', {
+            const res = await fetch(`${API}/ask`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ question, docIds, documentText, allDocuments })

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { API } from '../lib/api';
 import {
     FileText, BookOpen, HelpCircle, Layers, ChevronDown, ChevronUp,
     RotateCcw, Bot, Volume2, VolumeX, ClipboardList,
@@ -36,7 +37,7 @@ function Result() {
         setRegenerating(true);
         setRegenError('');
         try {
-            const res = await fetch('http://localhost:5000/reanalyze', {
+            const res = await fetch(`${API}/reanalyze`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ documentText: lesson.documentText, title: lesson.title }),
@@ -84,7 +85,7 @@ function Result() {
         if (lesson.fromDB && lesson.id) {
             getToken().then(token => {
                 if (!token) return;
-                fetch(`http://localhost:5000/lessons/${lesson.id}`, {
+                fetch(`${API}/lessons/${lesson.id}`, {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                     body: JSON.stringify({
@@ -115,7 +116,7 @@ function Result() {
             if (lesson.fromDB && lesson.id) {
                 getToken().then(token => {
                     if (!token) return;
-                    fetch(`http://localhost:5000/lessons/${lesson.id}`, {
+                    fetch(`${API}/lessons/${lesson.id}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
                         body: JSON.stringify({ study_time_secs: (lesson.studyTime || 0) + elapsed }),
