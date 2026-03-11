@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, User, Menu, X } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Home from './pages/Home';
@@ -15,18 +16,40 @@ import './index.css';
 
 function NavBar() {
     const { user, signOut, signInWithWorkOS } = useAuth();
-
+    const [menuOpen, setMenuOpen] = useState(false);
     const handleSignOut = async () => {
+        setMenuOpen(false);
         await signOut();
     };
 
+    const closeMenu = () => setMenuOpen(false);
+
+    // Close menu on navigation
+    const handleNavClick = () => setMenuOpen(false);
+
     return (
         <nav className="navbar">
-            <Link to="/" className="brand">Learnflux</Link>
-            <div className="nav-links">
-                <Link to="/upload"    className="nav-link">Upload</Link>
-                <Link to="/dashboard" className="nav-link">Dashboard</Link>
-                <Link to="/tutor"     className="nav-link">AI Tutor</Link>
+            <Link to="/" className="brand" onClick={closeMenu}>Learnflux</Link>
+
+            {/* Mobile overlay */}
+            <div
+                className={`nav-overlay${menuOpen ? ' open' : ''}`}
+                onClick={closeMenu}
+            />
+
+            {/* Hamburger toggle */}
+            <button
+                className="nav-toggle"
+                onClick={() => setMenuOpen(o => !o)}
+                aria-label="Toggle menu"
+            >
+                {menuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+
+            <div className={`nav-links${menuOpen ? ' open' : ''}`}>
+                <Link to="/upload"    className="nav-link" onClick={handleNavClick}>Upload</Link>
+                <Link to="/dashboard" className="nav-link" onClick={handleNavClick}>Dashboard</Link>
+                <Link to="/tutor"     className="nav-link" onClick={handleNavClick}>AI Tutor</Link>
                 {user ? (
                     <>
                         <span className="nav-user">
@@ -38,7 +61,7 @@ function NavBar() {
                         </button>
                     </>
                 ) : (
-                    <button className="btn-primary" onClick={signInWithWorkOS}>Login</button>
+                    <button className="btn-primary" onClick={() => { closeMenu(); signInWithWorkOS(); }}>Login</button>
                 )}
             </div>
         </nav>

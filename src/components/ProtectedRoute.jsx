@@ -18,7 +18,8 @@ export default function ProtectedRoute({ children }) {
         return (
             <div style={{
                 display: 'flex', flexDirection: 'column', alignItems: 'center',
-                justifyContent: 'center', height: '60vh', gap: '16px', textAlign: 'center'
+                justifyContent: 'center', height: '60vh', gap: '16px', textAlign: 'center',
+                padding: '0 1.5rem'
             }}>
                 <h2 style={{ color: 'var(--text-primary)', margin: 0 }}>Sign in to continue</h2>
                 <p style={{ color: 'var(--text-secondary)', margin: 0 }}>
@@ -27,7 +28,7 @@ export default function ProtectedRoute({ children }) {
                 <button
                     className="btn-primary large"
                     onClick={signInWithWorkOS}
-                    style={{ marginTop: '8px' }}
+                    style={{ marginTop: '8px', minHeight: '48px', WebkitTapHighlightColor: 'transparent' }}
                 >
                     Sign in with Learnflux
                 </button>

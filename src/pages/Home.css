@@ -86,6 +86,13 @@
     flex: 1;
     width: 100%;
     perspective: 1000px;
+    pointer-events: none;
+}
+
+@media (min-width: 768px) {
+    .hero-visual {
+        pointer-events: auto;
+    }
 }
 
 .mock-video-player {
