@@ -41,7 +41,9 @@ function NavBar() {
             <button
                 className="nav-toggle"
                 onClick={() => setMenuOpen(o => !o)}
+                onTouchEnd={(e) => { e.preventDefault(); setMenuOpen(o => !o); }}
                 aria-label="Toggle menu"
+                type="button"
             >
                 {menuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
@@ -56,12 +58,22 @@ function NavBar() {
                             <User size={14} />
                             {user.email?.split('@')[0] || user.firstName}
                         </span>
-                        <button className="nav-signout" onClick={handleSignOut}>
+                        <button
+                            className="nav-signout"
+                            onClick={handleSignOut}
+                            onTouchEnd={(e) => { e.preventDefault(); handleSignOut(); }}
+                            type="button"
+                        >
                             <LogOut size={15} /> Sign out
                         </button>
                     </>
                 ) : (
-                    <button className="btn-primary" onClick={() => { closeMenu(); signInWithWorkOS(); }}>Login</button>
+                    <button
+                        className="btn-primary"
+                        onClick={() => { closeMenu(); signInWithWorkOS(); }}
+                        onTouchEnd={(e) => { e.preventDefault(); closeMenu(); signInWithWorkOS(); }}
+                        type="button"
+                    >Login</button>
                 )}
             </div>
         </nav>

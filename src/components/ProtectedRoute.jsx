@@ -28,6 +28,8 @@ export default function ProtectedRoute({ children }) {
                 <button
                     className="btn-primary large"
                     onClick={signInWithWorkOS}
+                    onTouchEnd={(e) => { e.preventDefault(); signInWithWorkOS(); }}
+                    type="button"
                     style={{ marginTop: '8px', minHeight: '48px', WebkitTapHighlightColor: 'transparent' }}
                 >
                     Sign in with Learnflux

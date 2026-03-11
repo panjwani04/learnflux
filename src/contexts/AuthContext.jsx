@@ -36,10 +36,16 @@ export function AuthProvider({ children }) {
 
     // ── WorkOS AuthKit ────────────────────────────────────────────────
 
-    const signInWithWorkOS = async () => {
-        const res  = await fetch(`${API}/auth/url`);
-        const data = await res.json();
-        if (data.url) window.location.href = data.url;
+    const signInWithWorkOS = () => {
+        fetch(`${API}/auth/url`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.url) window.location.href = data.url;
+            })
+            .catch(err => {
+                console.error('WorkOS sign-in failed:', err);
+                alert('Unable to reach the sign-in server. Please try again.');
+            });
     };
 
     // Called by AuthCallback after WorkOS redirects back with ?code=
