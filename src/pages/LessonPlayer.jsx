@@ -249,7 +249,6 @@ function LessonPlayer() {
     const [bgImg,        setBgImg]       = useState(null);
     const [bgReady,      setBgReady]     = useState(false);
     const [language,     setLanguage]    = useState('en');
-    const [audioLoading, setAudioLoading] = useState(false);
     const [fullscreen,   setFullscreen]  = useState(false);
     const [elapsed,      setElapsed]     = useState(0);   // seconds playing total
     const [slideElapsed, setSlideElapsed] = useState(0);  // seconds on current slide
@@ -326,8 +325,6 @@ function LessonPlayer() {
     /* Stop all audio */
     const stopAudio = useCallback(() => {
         genRef.current += 1;
-        clearInterval(pollRef.current);
-        setAudioLoading(false);
         if (audioRef.current) { audioRef.current.onended = null; audioRef.current.pause(); audioRef.current.src = ''; }
         speechSynthesis.cancel();
     }, []);
@@ -350,7 +347,6 @@ function LessonPlayer() {
         const startTime = Date.now();
         const onDone = () => {
             if (isStale()) return;
-            clearInterval(pollRef.current);
             setAudioLoading(false);
             const wait = Math.max(0, 5000 - (Date.now() - startTime));
             setTimeout(() => {
@@ -372,38 +368,23 @@ function LessonPlayer() {
         const key    = `${si}-${lang}`;
         const cached = _audioCache.get(key);
 
-        const playBlob = (url) => {
-            if (isStale()) return;
-            setAudioLoading(false);
-            audioRef.current.src     = url;
+        /* ── ElevenLabs already cached and ready — play it ── */
+        /* The audio element was unlocked synchronously in the click   */
+        /* handler so audio.play() works here even on iOS.             */
+        if (cached && cached !== 'pending') {
+            audioRef.current.src     = cached;
             audioRef.current.onended = onDone;
             audioRef.current.onerror = () => { if (!isStale()) speakBrowser(text, lang, onDone); };
             audioRef.current.play().catch(() => { if (!isStale()) speakBrowser(text, lang, onDone); });
-        };
-
-        if (cached && cached !== 'pending') { playBlob(cached); return; }
-
-        if (cached === 'pending') {
-            setAudioLoading(true);
-            pollRef.current = setInterval(() => {
-                if (isStale()) { clearInterval(pollRef.current); return; }
-                const v = _audioCache.get(key);
-                if (v && v !== 'pending') { clearInterval(pollRef.current); playBlob(v); }
-                else if (!v)             { clearInterval(pollRef.current); setAudioLoading(false); speakBrowser(text, lang, onDone); }
-            }, 200);
             return;
         }
 
-        setAudioLoading(true);
-        _audioCache.set(key, 'pending');
-        fetchAudio(text, lang).then(url => {
-            if (isStale()) return;
-            if (url) { _audioCache.set(key, url); playBlob(url); }
-            else     { _audioCache.delete(key);   setAudioLoading(false); speakBrowser(text, lang, onDone); }
-        }).catch(() => {
-            if (isStale()) return;
-            _audioCache.delete(key); setAudioLoading(false); speakBrowser(text, lang, onDone);
-        });
+        /* ── ElevenLabs not ready yet ──────────────────────────────── */
+        /* Immediately start browser TTS — 100% reliable on all devices */
+        /* (called from within the click → user-gesture chain).         */
+        /* Cache ElevenLabs in background so the NEXT play uses it.     */
+        speakBrowser(text, lang, onDone);
+        if (!cached) cacheAudio(key, text, lang);
 
     }, [slides, stopAudio]);
 
@@ -546,11 +527,9 @@ function LessonPlayer() {
                             AI Presenter · {language === 'hi' ? 'हिंदी' : 'English'}
                         </span>
                         <p className="lp-caption">
-                            {audioLoading
-                                ? (language === 'hi' ? 'AI आवाज़ तैयार हो रही है...' : 'Generating AI voice...')
-                                : playing
-                                    ? (language === 'hi' ? 'बोल रहे हैं — ध्यान से सुनें...' : 'Speaking — listen carefully...')
-                                    : (() => { const t = displayText; return t.slice(0, 120) + (t.length > 120 ? '...' : ''); })()
+                            {playing
+                                ? (language === 'hi' ? 'बोल रहे हैं — ध्यान से सुनें...' : 'Speaking — listen carefully...')
+                                : (() => { const t = displayText; return t.slice(0, 120) + (t.length > 120 ? '...' : ''); })()
                             }
                         </p>
                     </div>
