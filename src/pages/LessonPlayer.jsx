@@ -128,6 +128,32 @@ function cleanText(t) {
 /* ── Audio cache ── */
 const _audioCache = new Map();
 
+/* ── iOS/mobile audio unlock ──────────────────────────────────────
+   iOS Safari blocks audio from async callbacks. We must call both
+   audio.play() AND speechSynthesis.speak() synchronously inside a
+   user gesture (click) before any async audio can play.
+─────────────────────────────────────────────────────────────────── */
+let _speechUnlocked = false;
+// 1ms silent MP3 — used to unlock the <audio> element on iOS
+const SILENT_MP3 = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
+
+function unlockAudio(audioEl) {
+    // Unlock <audio> element for iOS (must be called in click handler)
+    if (audioEl && !audioEl._iosUnlocked) {
+        audioEl._iosUnlocked = true;
+        audioEl.src = SILENT_MP3;
+        audioEl.play().then(() => { audioEl.pause(); audioEl.src = ''; }).catch(() => {});
+    }
+    // Unlock Web Speech API for iOS
+    if (!_speechUnlocked && 'speechSynthesis' in window) {
+        _speechUnlocked = true;
+        const u = new SpeechSynthesisUtterance(' ');
+        u.volume = 0; u.rate = 10;
+        speechSynthesis.speak(u);
+        setTimeout(() => speechSynthesis.cancel(), 100);
+    }
+}
+
 function buildSlideText(s) {
     if (!s) return '';
     return s.type === 'intro'   ? `${s.title}. ${s.body}` :
@@ -308,14 +334,6 @@ function LessonPlayer() {
 
     useEffect(() => () => stopAudio(), [stopAudio]);
 
-    /* Auto-start on load */
-    useEffect(() => {
-        if (slides.length > 0) {
-            const t = setTimeout(() => speakRef.current?.(0), 1000);
-            return () => clearTimeout(t);
-        }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
     const doSpeak = useCallback((si) => {
         stopAudio();
         const s = slides[si];
@@ -393,11 +411,16 @@ function LessonPlayer() {
 
     const togglePlay = () => {
         if (playing) { stopAudio(); setPlaying(false); }
-        else         { doSpeak(idx); }
+        else {
+            // MUST call unlockAudio synchronously here — iOS blocks audio from async callbacks
+            unlockAudio(audioRef.current);
+            doSpeak(idx);
+        }
     };
 
     const goTo = (n, dir) => {
         if (n < 0 || n >= slides.length) return;
+        unlockAudio(audioRef.current);
         stopAudio();
         setPlaying(false);
         setDirection(dir || (n > idx ? 'next' : 'prev'));
