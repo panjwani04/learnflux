@@ -29,6 +29,7 @@ function Result() {
     const [studyTime, setStudyTime] = useState(0);
     const [regenerating, setRegenerating] = useState(false);
     const [regenError, setRegenError] = useState('');
+    const [regenCountdown, setRegenCountdown] = useState(0);
 
     const isIncomplete = lesson && (!lesson.keyPoints?.length || !lesson.quiz?.length);
 
@@ -36,6 +37,7 @@ function Result() {
         if (!lesson?.documentText) return;
         setRegenerating(true);
         setRegenError('');
+        setRegenCountdown(0);
         try {
             const res = await fetch(`${API}/reanalyze`, {
                 method: 'POST',
@@ -51,7 +53,25 @@ function Result() {
             localStorage.setItem('learnflux_lessons', JSON.stringify(updated));
             window.location.reload();
         } catch (e) {
-            setRegenError(e.message || 'Regeneration failed. Try again in a moment.');
+            const msg = e.message || 'Regeneration failed.';
+            const isRateLimit = msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many');
+            setRegenError(isRateLimit ? 'Rate limit hit. Auto-retrying in 30 seconds…' : msg);
+            if (isRateLimit) {
+                // auto-retry after 30s countdown
+                let secs = 30;
+                setRegenCountdown(secs);
+                const tick = setInterval(() => {
+                    secs--;
+                    setRegenCountdown(secs);
+                    if (secs <= 0) {
+                        clearInterval(tick);
+                        setRegenError('');
+                        setRegenerating(false);
+                        handleRegenerate(); // auto-retry
+                    }
+                }, 1000);
+                return; // don't run finally yet
+            }
         } finally {
             setRegenerating(false);
         }
@@ -231,11 +251,14 @@ function Result() {
             {/* ── Incomplete data banner ── */}
             {isIncomplete && (
                 <div className="regen-banner">
-                    <span>⚠️ Some content didn't load (AI rate limit). Click to regenerate.</span>
-                    <button className="regen-btn" onClick={handleRegenerate} disabled={regenerating}>
-                        {regenerating ? 'Regenerating…' : '🔄 Regenerate Content'}
+                    <span>
+                        AI rate limit hit — some content is missing.
+                        {regenCountdown > 0 && ` Auto-retrying in ${regenCountdown}s…`}
+                    </span>
+                    <button className="regen-btn" onClick={handleRegenerate} disabled={regenerating || regenCountdown > 0}>
+                        {regenerating ? 'Regenerating…' : regenCountdown > 0 ? `Retry in ${regenCountdown}s` : 'Regenerate'}
                     </button>
-                    {regenError && <span className="regen-error">{regenError}</span>}
+                    {regenError && !regenCountdown && <span className="regen-error">{regenError}</span>}
                 </div>
             )}
 

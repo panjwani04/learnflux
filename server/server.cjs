@@ -116,16 +116,20 @@ async function sendWelcomeEmail(user) {
     }
 }
 
-async function groqWithRetry(prompt, maxTokens, retries = 2) {
+async function groqWithRetry(prompt, maxTokens, retries = 4) {
+    const delays = [10000, 20000, 30000, 45000]; // progressive back-off
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             return await groqFast(prompt, maxTokens);
         } catch (e) {
-            const is429 = e.message?.includes('429') || e.message?.includes('rate');
+            const is429 = e.message?.includes('429') || e.message?.includes('rate') || e.message?.includes('Rate limit');
             if (is429 && attempt < retries) {
-                console.warn(`[AI] Rate limit hit, waiting 8s before retry ${attempt + 1}...`);
-                await sleep(8000);
+                const wait = delays[attempt] || 30000;
+                console.warn(`[AI] Rate limit hit, waiting ${wait / 1000}s before retry ${attempt + 1}/${retries}...`);
+                await sleep(wait);
             } else {
+                // Tag the error so callers know it was a rate-limit exhaustion
+                if (is429) e.rateLimited = true;
                 throw e;
             }
         }
@@ -296,12 +300,23 @@ ${text}`;
 async function processDocument(text, fallbackTitle) {
     const context = sampleDocument(text, 10000);
     console.log(`[AI] Single call — doc: ${text.length} chars, sampled: ${context.length} chars`);
-    const raw = await groqWithRetry(buildStudyPrompt(context), 2500);
-    const data = parseJSON(raw, null);
+    let raw;
+    let rateLimited = false;
+    try {
+        raw = await groqWithRetry(buildStudyPrompt(context), 2500);
+    } catch (e) {
+        if (e.rateLimited) {
+            console.warn('[AI] All retries exhausted due to rate limit — returning empty lesson');
+            rateLimited = true;
+        } else {
+            throw e;
+        }
+    }
+    const data = raw ? parseJSON(raw, null) : null;
 
     if (!data) {
         console.warn('[AI] Failed to parse response. Raw start:', raw?.slice(0, 200));
-        return { title: fallbackTitle, summary: '', keyPoints: [], explanation: [], definitions: [], quiz: [], flashcards: [], mindMap: null, summaryHindi: '', keyPointsHindi: [], explanationHindi: [] };
+        return { title: fallbackTitle, summary: '', keyPoints: [], explanation: [], definitions: [], quiz: [], flashcards: [], mindMap: null, summaryHindi: '', keyPointsHindi: [], explanationHindi: [], rateLimited };
     }
 
     const toArr = (v) => Array.isArray(v) ? v : (typeof v === 'string' && v ? [v] : []);
@@ -318,7 +333,10 @@ async function processDocument(text, fallbackTitle) {
         keyPointsHindi:   toArr(data.keyPointsHindi),
         explanationHindi: toArr(data.explanationHindi),
     };
-    console.log(`[AI] Done — points:${result.keyPoints.length} quiz:${result.quiz.length} flashcards:${result.flashcards.length} mindMap:${!!result.mindMap}`);
+    // Flag as incomplete if critical fields missing (partial parse)
+    const incomplete = !result.keyPoints.length || !result.quiz.length;
+    if (incomplete) result.rateLimited = rateLimited || true;
+    console.log(`[AI] Done — points:${result.keyPoints.length} quiz:${result.quiz.length} flashcards:${result.flashcards.length} mindMap:${!!result.mindMap} rateLimited:${!!result.rateLimited}`);
     return result;
 }
 
@@ -503,7 +521,8 @@ Answer:`;
     } catch (err) {
         console.error('Ask error:', err.message);
         let userMsg = 'AI tutor error. Please try again in a moment.';
-        if (err.message?.includes('429')) userMsg = 'Too many requests — please wait 10 seconds and try again.';
+        const isRateLimit = err.message?.includes('429') || err.message?.includes('rate') || err.rateLimited;
+        if (isRateLimit) userMsg = 'Rate limit reached — please wait 15–30 seconds and try again.';
         else if (err.message?.includes('401')) userMsg = 'AI service authentication failed. Check the API key.';
         else if (err.message?.includes('503') || err.message?.includes('overloaded')) userMsg = 'AI service is busy. Please try again in a few seconds.';
         res.status(500).json({ error: userMsg });

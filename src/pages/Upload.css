@@ -14,24 +14,27 @@
 
 .upload-title {
     font-size: 2.5rem;
-    margin-bottom: 1rem;
-    font-weight: 700;
+    margin-bottom: 0.75rem;
+    font-weight: 900;
     color: var(--text-primary);
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
 }
 
 .upload-subtitle {
-    font-size: 1.125rem;
+    font-size: 1rem;
     color: var(--text-secondary);
     margin-bottom: 3rem;
+    line-height: 1.6;
 }
 
 .drop-zone {
     background-color: var(--bg-secondary);
-    border: 2px dashed var(--border-color);
-    border-radius: 1.5rem;
+    border: 1px dashed var(--border-glow);
+    border-radius: 0.75rem;
     padding: 4rem 2rem;
     cursor: pointer;
-    transition: all 0.3s ease;
+    transition: all 0.25s ease;
     min-height: 350px;
     display: flex;
     align-items: center;
@@ -41,13 +44,15 @@
 
 .drop-zone:hover {
     border-color: var(--accent-color);
-    background-color: rgba(99, 102, 241, 0.05);
+    background-color: var(--accent-dim);
+    box-shadow: 0 0 40px rgba(61, 220, 132, 0.06);
 }
 
 .drop-zone.drag-active {
     border-color: var(--accent-color);
-    background-color: rgba(99, 102, 241, 0.1);
-    transform: scale(1.02);
+    background-color: var(--accent-dim);
+    box-shadow: 0 0 60px rgba(61, 220, 132, 0.12);
+    transform: scale(1.01);
 }
 
 .drop-zone.file-selected {
@@ -69,16 +74,18 @@
 .upload-icon {
     color: var(--accent-color);
     margin-bottom: 1rem;
+    filter: drop-shadow(0 0 10px rgba(61,220,132,0.5));
 }
 
 .file-icon {
-    color: #38bdf8;
+    color: var(--accent-color);
     margin-bottom: 1rem;
 }
 
 .drop-zone-content h3 {
-    font-size: 1.5rem;
+    font-size: 1.4rem;
     color: var(--text-primary);
+    font-weight: 700;
 }
 
 .drop-zone-content p {
@@ -98,9 +105,10 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    background-color: rgba(255, 255, 255, 0.05);
+    background-color: rgba(255, 255, 255, 0.03);
     padding: 1rem;
-    border-radius: 0.75rem;
+    border-radius: 0.625rem;
+    border: 1px solid var(--border-color);
 }
 
 .file-name {
@@ -117,72 +125,56 @@
 }
 
 .success-icon {
-    color: #10b981;
+    color: var(--accent-color);
     animation: scaleIn 0.3s ease forwards;
+    filter: drop-shadow(0 0 6px rgba(61,220,132,0.6));
 }
 
 .progress-bar-bg {
-    height: 8px;
+    height: 4px;
     background-color: var(--border-color);
-    border-radius: 4px;
+    border-radius: 2px;
     overflow: hidden;
 }
 
 .progress-bar-fill {
     height: 100%;
     background-color: var(--accent-color);
-    border-radius: 4px;
+    border-radius: 2px;
     transition: width 0.3s ease;
     position: relative;
+    box-shadow: 0 0 10px rgba(61,220,132,0.5);
 }
 
 .progress-bar-fill::after {
     content: "";
     position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: linear-gradient(90deg,
-            rgba(255, 255, 255, 0) 0%,
-            rgba(255, 255, 255, 0.3) 50%,
-            rgba(255, 255, 255, 0) 100%);
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%);
     animation: shimmer 1.5s infinite;
 }
 
 @keyframes shimmer {
-    0% {
-        transform: translateX(-100%);
-    }
-
-    100% {
-        transform: translateX(100%);
-    }
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 }
 
 @keyframes scaleIn {
-    from {
-        transform: scale(0);
-        opacity: 0;
-    }
-
-    to {
-        transform: scale(1);
-        opacity: 1;
-    }
+    from { transform: scale(0); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
 }
 
 .upload-error {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
+    background-color: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
     color: #f87171;
     padding: 0.75rem 1rem;
-    border-radius: 0.75rem;
+    border-radius: 0.625rem;
     margin-bottom: 1.5rem;
-    font-size: 0.95rem;
+    font-size: 0.9rem;
 }
 
 .progress-stages {
@@ -192,8 +184,8 @@
 }
 
 .stage-dot {
-    width: 8px;
-    height: 8px;
+    width: 7px;
+    height: 7px;
     border-radius: 50%;
     background-color: var(--border-color);
     transition: background-color 0.4s ease;
@@ -201,6 +193,7 @@
 
 .stage-dot.active {
     background-color: var(--accent-color);
+    box-shadow: 0 0 8px rgba(61,220,132,0.6);
 }
 
 .progress-text {
@@ -210,15 +203,7 @@
 }
 
 @keyframes pulse-text {
-    0% {
-        opacity: 0.7;
-    }
-
-    50% {
-        opacity: 1;
-    }
-
-    100% {
-        opacity: 0.7;
-    }
+    0% { opacity: 0.5; }
+    50% { opacity: 1; }
+    100% { opacity: 0.5; }
 }
