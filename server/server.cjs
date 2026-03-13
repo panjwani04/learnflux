@@ -117,7 +117,7 @@ async function sendWelcomeEmail(user) {
 }
 
 async function groqWithRetry(prompt, maxTokens, retries = 4) {
-    const delays = [10000, 20000, 30000, 45000]; // progressive back-off
+    const delays = [8000, 12000, 20000, 30000]; // progressive back-off
     for (let attempt = 0; attempt <= retries; attempt++) {
         try {
             return await groqFast(prompt, maxTokens);

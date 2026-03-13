@@ -12,6 +12,7 @@ function Upload() {
     const [progress, setProgress] = useState(0);
     const [stage, setStage] = useState('');
     const [error, setError] = useState(null);
+    const [slowWarning, setSlowWarning] = useState(false);
     const inputRef = useRef(null);
     const navigate = useNavigate();
     const { getToken } = useAuth();
@@ -21,6 +22,8 @@ function Upload() {
         { at: 30,  label: 'Extracting text...' },
         { at: 55,  label: 'AI analyzing document...' },
         { at: 75,  label: 'Generating study notes...' },
+        { at: 85,  label: 'AI rate limit — retrying shortly...' },
+        { at: 90,  label: 'Almost there — waiting for AI...' },
     ];
 
     const handleDrag = function (e) {
@@ -69,6 +72,8 @@ const uploadToServer = async (selectedFile) => {
   setUploading(true);
   setProgress(0);
   setStage('Uploading PDF...');
+  setSlowWarning(false);
+  const slowTimer = setTimeout(() => setSlowWarning(true), 25000);
 
   const formData = new FormData();
   formData.append("file", selectedFile);
@@ -79,9 +84,11 @@ const uploadToServer = async (selectedFile) => {
 
   let currentProgress = 0;
   const progressInterval = setInterval(() => {
-    const remaining = 88 - currentProgress;
-    currentProgress += remaining * 0.06;
-    const rounded = Math.round(currentProgress);
+    // Below 83%: fast approach; above 83%: crawl slowly up to 96% (covers retry waits)
+    const cap = currentProgress < 83 ? 83 : 96;
+    const speed = currentProgress < 83 ? 0.07 : 0.008;
+    currentProgress += (cap - currentProgress) * speed;
+    const rounded = Math.min(96, Math.round(currentProgress));
     setProgress(rounded);
     const activeStage = [...STAGES].reverse().find(s => rounded >= s.at);
     if (activeStage) setStage(activeStage.label);
@@ -106,6 +113,8 @@ const uploadToServer = async (selectedFile) => {
     }
 
     clearInterval(progressInterval);
+    clearTimeout(slowTimer);
+    setSlowWarning(false);
     setStage('Complete!');
 
     const lesson = {
@@ -135,6 +144,8 @@ const uploadToServer = async (selectedFile) => {
 
   } catch (err) {
     clearInterval(progressInterval);
+    clearTimeout(slowTimer);
+    setSlowWarning(false);
     setUploading(false);
     setFile(null);
     setProgress(0);
@@ -185,6 +196,12 @@ const uploadToServer = async (selectedFile) => {
                             <FileText size={64} className="file-icon" />
                             <h3>{file.name}</h3>
                             <p>{(file.size / 1024 / 1024).toFixed(2)} MB</p>
+                        </div>
+                    )}
+
+                    {uploading && slowWarning && (
+                        <div className="upload-rate-warning">
+                            ⚠️ AI is busy — auto-retrying. Please wait, this may take up to 60 seconds.
                         </div>
                     )}
 
