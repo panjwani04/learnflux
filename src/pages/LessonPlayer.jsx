@@ -19,6 +19,7 @@ function pickMaleVoice(voices, langCode) {
 }
 
 function speakBrowser(text, language, onDone) {
+    if (!('speechSynthesis' in window)) { onDone?.(); return; }
     const utterance  = new SpeechSynthesisUtterance(text);
     const voices     = speechSynthesis.getVoices();
     const langCode   = language === 'hi' ? 'hi-IN' : 'en-US';
@@ -27,9 +28,14 @@ function speakBrowser(text, language, onDone) {
     utterance.pitch  = 0.9;
     utterance.rate   = 0.95;
     if (selected)    utterance.voice = selected;
-    if (onDone)      utterance.onend = onDone;
+    utterance.onend  = onDone || null;
+    utterance.onerror = () => onDone?.();
     speechSynthesis.cancel();
-    speechSynthesis.speak(utterance);
+    // Small delay ensures cancel() finishes before new speak() — fixes Chrome/iOS issues
+    setTimeout(() => {
+        try { speechSynthesis.speak(utterance); }
+        catch { onDone?.(); }
+    }, 50);
 }
 
 /* ── Image fetching ── */
@@ -133,11 +139,16 @@ function buildSlideText(s) {
 async function fetchAudio(text, language) {
     if (!text?.trim()) return null;
     try {
+        const controller = new AbortController();
+        // 8-second timeout — prevents Render cold-start from blocking browser TTS fallback
+        const t = setTimeout(() => controller.abort(), 8000);
         const res = await fetch(`${API}/generate-audio`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ text, language }),
+            signal: controller.signal,
         });
+        clearTimeout(t);
         const ct = res.headers.get('Content-Type') || '';
         if (res.ok && ct.includes('audio')) return URL.createObjectURL(await res.blob());
         return null;
