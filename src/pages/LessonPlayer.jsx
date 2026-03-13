@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Play, Pause, SkipBack, SkipForward, ChevronLeft, Repeat, BookOpen, Maximize2, Minimize2, Volume2 } from 'lucide-react';
 import { API } from '../lib/api';
@@ -125,32 +125,56 @@ function cleanText(t) {
     return String(t || '').replace(/\s+/g, ' ').trim();
 }
 
-/* ── Audio cache ── */
-const _audioCache = new Map();
+/* ── Fetch full lesson audio (one call per lesson) ── */
+async function fetchLessonAudio(lessonId, narration, language) {
+    if (!narration?.trim() || !lessonId) return null;
+    try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 90000); // 90s — full lesson generation can be slow
+        const res = await fetch(`${API}/generate-lesson-audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lessonId, narration, language }),
+            signal: controller.signal,
+        });
+        clearTimeout(t);
+        if (!res.ok) { console.warn('[audio] /generate-lesson-audio returned', res.status); return null; }
+        const ct = res.headers.get('Content-Type') || '';
+        if (ct.includes('audio')) return URL.createObjectURL(await res.blob());
+        const data = await res.json();
+        if (data.available === false) { console.log('[audio] ElevenLabs not configured'); return null; }
+        console.warn('[audio] unexpected response', data);
+        return null;
+    } catch (e) {
+        console.warn('[audio] fetchLessonAudio failed:', e.message);
+        return null;
+    }
+}
 
 /* ── iOS/mobile audio unlock ──────────────────────────────────────
    iOS Safari blocks audio from async callbacks. We must call both
    audio.play() AND speechSynthesis.speak() synchronously inside a
    user gesture (click) before any async audio can play.
 ─────────────────────────────────────────────────────────────────── */
+let _iosUnlocked    = false;
 let _speechUnlocked = false;
-// 1ms silent MP3 — used to unlock the <audio> element on iOS
+// 1ms silent MP3 — used to unlock the audio context on iOS
 const SILENT_MP3 = 'data:audio/mpeg;base64,SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU2LjM2LjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDV1dXV1dXV1dXV1dXV1dXV1dXV1dXV6urq6urq6urq6urq6urq6urq6urq6v////////////////////////////////8AAAAATGF2YzU2LjQxAAAAAAAAAAAAAAAAJAAAAAAAAAAAASDs90hvAAAAAAAAAAAAAAAAAAAA//MUZAAAAAGkAAAAAAAAA0gAAAAATEFN//MUZAMAAAGkAAAAAAAAA0gAAAAARTMu//MUZAYAAAGkAAAAAAAAA0gAAAAAOTku//MUZAkAAAGkAAAAAAAAA0gAAAAANVVV';
 
-function unlockAudio(audioEl) {
-    // Unlock <audio> element for iOS (must be called in click handler)
-    if (audioEl && !audioEl._iosUnlocked) {
-        audioEl._iosUnlocked = true;
-        audioEl.src = SILENT_MP3;
-        audioEl.play().then(() => { audioEl.pause(); audioEl.src = ''; }).catch(() => {});
+/* iOS audio unlock — uses a SEPARATE temporary audio element so we never
+   touch the main audioRef, which holds the lesson audio src.             */
+function unlockAudio() {
+    if (!_iosUnlocked) {
+        _iosUnlocked = true;
+        // Temporary element only — never overwrites the lesson audio element
+        const tmp = new Audio(SILENT_MP3);
+        tmp.play().catch(() => {});
     }
-    // Unlock Web Speech API for iOS
     if (!_speechUnlocked && 'speechSynthesis' in window) {
         _speechUnlocked = true;
         const u = new SpeechSynthesisUtterance(' ');
         u.volume = 0; u.rate = 10;
         speechSynthesis.speak(u);
-        setTimeout(() => speechSynthesis.cancel(), 100);
     }
 }
 
@@ -166,8 +190,8 @@ async function fetchAudio(text, language) {
     if (!text?.trim()) return null;
     try {
         const controller = new AbortController();
-        // 8-second timeout — prevents Render cold-start from blocking browser TTS fallback
-        const t = setTimeout(() => controller.abort(), 8000);
+        // 12-second timeout — enough for OpenAI TTS (~2-4s), falls to browser TTS on failure
+        const t = setTimeout(() => controller.abort(), 12000);
         const res = await fetch(`${API}/generate-audio`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -181,14 +205,6 @@ async function fetchAudio(text, language) {
     } catch { return null; }
 }
 
-function cacheAudio(key, text, language) {
-    if (_audioCache.has(key)) return;
-    _audioCache.set(key, 'pending');
-    fetchAudio(text, language).then(url => {
-        if (url) _audioCache.set(key, url);
-        else     _audioCache.delete(key);
-    });
-}
 
 /* ── Format seconds to M:SS ── */
 function fmtTime(s) {
@@ -242,24 +258,28 @@ function LessonPlayer() {
     const lesson     = JSON.parse(localStorage.getItem('learnflux_current') || 'null');
     const slides     = lesson ? buildSlides(lesson) : [];
 
-    const [idx,          setIdx]         = useState(0);
-    const [direction,    setDirection]   = useState('next'); // 'next' | 'prev'
-    const [playing,      setPlaying]     = useState(false);
-    const [autoAdv,      setAutoAdv]     = useState(true);
-    const [bgImg,        setBgImg]       = useState(null);
-    const [bgReady,      setBgReady]     = useState(false);
-    const [language,     setLanguage]    = useState('en');
-    const [fullscreen,   setFullscreen]  = useState(false);
-    const [elapsed,      setElapsed]     = useState(0);   // seconds playing total
-    const [slideElapsed, setSlideElapsed] = useState(0);  // seconds on current slide
+    const [idx,           setIdx]          = useState(0);
+    const [direction,     setDirection]    = useState('next'); // 'next' | 'prev'
+    const [playing,       setPlaying]      = useState(false);
+    const [autoAdv,       setAutoAdv]      = useState(true);
+    const [bgImg,         setBgImg]        = useState(null);
+    const [bgReady,       setBgReady]      = useState(false);
+    const [language,      setLanguage]     = useState('en');
+    const [fullscreen,    setFullscreen]   = useState(false);
+    const [elapsed,       setElapsed]      = useState(0);
+    const [slideElapsed,  setSlideElapsed] = useState(0);
+    const [lessonAudioUrl, setLessonAudioUrl] = useState(null);  // objectURL from /generate-lesson-audio
+    const [audioReady,    setAudioReady]   = useState(false);    // true once <audio> can play
+    const [audioFetching, setAudioFetching] = useState(false);  // true while /generate-lesson-audio is in progress
 
-    const stateRef    = useRef({ idx: 0, auto: true });
-    const speakRef    = useRef(null);
-    const langRef     = useRef('en');
-    const audioRef    = useRef(null);
-    const genRef      = useRef(0);
-    const containerRef = useRef(null);
-    const timerRef    = useRef(null);
+    const stateRef      = useRef({ idx: 0, auto: true });
+    const speakRef      = useRef(null);
+    const langRef       = useRef('en');
+    const audioRef      = useRef(null);   // lesson audio element (full-lesson mp3)
+    const slideAudioRef = useRef(null);   // temporary per-slide Audio() for doSpeak
+    const genRef        = useRef(0);
+    const containerRef  = useRef(null);
+    const timerRef      = useRef(null);
     const slideTimerRef = useRef(null);
 
     useEffect(() => { stateRef.current.idx  = idx;     }, [idx]);
@@ -268,15 +288,72 @@ function LessonPlayer() {
 
     useEffect(() => { speechSynthesis.getVoices(); }, []);
 
-    /* Pre-generate audio for all slides */
-    useEffect(() => {
-        const lang = language;
-        slides.forEach((s, si) => {
-            const englishText = buildSlideText(s);
-            const text = lang === 'hi' ? (s.bodyHindi || englishText) : englishText;
-            cacheAudio(`${si}-${lang}`, text, lang);
+    /* Fraction (0–1) where each slide starts in the full lesson audio */
+    const slideFractions = useMemo(() => {
+        const lengths = slides.map(s => {
+            const lang = language === 'hi' && s.bodyHindi ? 'hi' : 'en';
+            return (lang === 'hi' ? s.bodyHindi : buildSlideText(s)).length;
         });
-    }, [language, slides]); // eslint-disable-line react-hooks/exhaustive-deps
+        const total = lengths.reduce((a, b) => a + b, 0) || 1;
+        let cum = 0;
+        return lengths.map(len => { const f = cum / total; cum += len; return f; });
+    }, [slides, language]);
+
+    /* Fetch ONE audio file for the entire lesson — fires once per language change */
+    useEffect(() => {
+        if (!lesson?.id) return;
+        setLessonAudioUrl(null);
+        setAudioReady(false);
+        const narration = slides.map(s => {
+            const lang = language === 'hi' && s.bodyHindi ? 'hi' : 'en';
+            return lang === 'hi' ? s.bodyHindi : buildSlideText(s);
+        }).join('. ');
+        console.log(`[audio] fetching lesson audio | id=${lesson.id} | lang=${language} | chars=${narration.length}`);
+        setAudioFetching(true);
+        fetchLessonAudio(lesson.id, narration, language).then(url => {
+            setAudioFetching(false);
+            if (url) { console.log('[audio] ✓ lesson audio ready'); setLessonAudioUrl(url); }
+            else      { console.log('[audio] ElevenLabs unavailable — using browser TTS'); }
+        });
+    }, [language]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    /* When lessonAudioUrl arrives, wire up the <audio> element */
+    useEffect(() => {
+        const audio = audioRef.current;
+        if (!audio || !lessonAudioUrl) { setAudioReady(false); return; }
+        audio.src = lessonAudioUrl;
+        audio.load();
+        const onCanPlay = () => setAudioReady(true);
+        const onEnded   = () => setPlaying(false);
+        audio.addEventListener('canplay', onCanPlay);
+        audio.addEventListener('ended',   onEnded);
+        return () => {
+            audio.removeEventListener('canplay', onCanPlay);
+            audio.removeEventListener('ended',   onEnded);
+        };
+    }, [lessonAudioUrl]);
+
+    /* Auto-advance slides based on audio playback position */
+    useEffect(() => {
+        const audio = audioRef.current;
+        if (!audio) return;
+        const handler = () => {
+            if (!audio.duration || !stateRef.current.auto) return;
+            const frac    = audio.currentTime / audio.duration;
+            let   newIdx  = 0;
+            for (let i = slideFractions.length - 1; i >= 0; i--) {
+                if (frac >= slideFractions[i]) { newIdx = i; break; }
+            }
+            if (newIdx !== stateRef.current.idx) {
+                const dir = newIdx > stateRef.current.idx ? 'next' : 'prev';
+                stateRef.current.idx = newIdx;
+                setDirection(dir);
+                setIdx(newIdx);
+            }
+        };
+        audio.addEventListener('timeupdate', handler);
+        return () => audio.removeEventListener('timeupdate', handler);
+    }, [slideFractions]);
 
     /* Background image per slide */
     useEffect(() => {
@@ -321,32 +398,28 @@ function LessonPlayer() {
         }
     };
 
-    /* Stop all audio */
+    /* Stop all audio — pause lesson element, destroy per-slide element, cancel TTS */
     const stopAudio = useCallback(() => {
         genRef.current += 1;
-        if (audioRef.current) { audioRef.current.onended = null; audioRef.current.pause(); audioRef.current.src = ''; }
+        if (audioRef.current) { audioRef.current.pause(); }
+        if (slideAudioRef.current) { slideAudioRef.current.pause(); slideAudioRef.current = null; }
         speechSynthesis.cancel();
     }, []);
 
     useEffect(() => () => stopAudio(), [stopAudio]);
 
-    const doSpeak = useCallback((si) => {
-        stopAudio();
+    /* Per-slide TTS — tries server audio (HF/Google) first, then browser TTS */
+    const doSpeak = useCallback(async (si) => {
         const s = slides[si];
         if (!s) return;
+        const gen       = ++genRef.current;
+        const wantHindi = langRef.current === 'hi';
+        const text      = wantHindi && s.bodyHindi?.trim() ? s.bodyHindi : buildSlideText(s);
+        const lang      = wantHindi && s.bodyHindi?.trim() ? 'hi' : 'en';
+        const isStale   = () => genRef.current !== gen;
 
-        const gen         = ++genRef.current;
-        const wantHindi   = langRef.current === 'hi';
-        const englishText = buildSlideText(s);
-        const hindiText   = s.bodyHindi?.trim();
-        const text        = wantHindi && hindiText ? hindiText : englishText;
-        const lang        = wantHindi && hindiText ? 'hi' : 'en';
-        const isStale     = () => genRef.current !== gen;
-
-        const startTime = Date.now();
         const onDone = () => {
             if (isStale()) return;
-            const wait = Math.max(0, 5000 - (Date.now() - startTime));
             setTimeout(() => {
                 if (isStale()) return;
                 setPlaying(false);
@@ -356,54 +429,70 @@ function LessonPlayer() {
                     stateRef.current.idx = next;
                     setDirection('next');
                     setIdx(next);
-                    setTimeout(() => { if (!isStale()) speakRef.current?.(next); }, 1200);
+                    setTimeout(() => { if (!isStale()) speakRef.current?.(next); }, 800);
                 }
-            }, wait);
+            }, 1000);
         };
 
         setPlaying(true);
 
-        const key    = `${si}-${lang}`;
-        const cached = _audioCache.get(key);
+        // Try server TTS (Google or HuggingFace) — falls back to browser TTS on timeout/error
+        const audioUrl = await fetchAudio(text, lang);
+        if (isStale()) return; // user clicked stop while fetching
 
-        /* ── ElevenLabs already cached and ready — play it ── */
-        /* The audio element was unlocked synchronously in the click   */
-        /* handler so audio.play() works here even on iOS.             */
-        if (cached && cached !== 'pending') {
-            audioRef.current.src     = cached;
-            audioRef.current.onended = onDone;
-            audioRef.current.onerror = () => { if (!isStale()) speakBrowser(text, lang, onDone); };
-            audioRef.current.play().catch(() => { if (!isStale()) speakBrowser(text, lang, onDone); });
-            return;
+        if (audioUrl) {
+            // Use a fresh Audio element — never touch audioRef (reserved for lesson audio)
+            const audio = new Audio(audioUrl);
+            slideAudioRef.current = audio;
+            const cleanup = () => {
+                slideAudioRef.current = null;
+                URL.revokeObjectURL(audioUrl);
+                audio.removeEventListener('ended', onEnded);
+                audio.removeEventListener('error', onError);
+            };
+            const onEnded = () => { cleanup(); onDone(); };
+            const onError = () => { cleanup(); speakBrowser(text, lang, onDone); };
+            audio.addEventListener('ended', onEnded);
+            audio.addEventListener('error', onError);
+            audio.play().catch(() => { cleanup(); speakBrowser(text, lang, onDone); });
+        } else {
+            speakBrowser(text, lang, onDone);
         }
-
-        /* ── ElevenLabs not ready yet ──────────────────────────────── */
-        /* Immediately start browser TTS — 100% reliable on all devices */
-        /* (called from within the click → user-gesture chain).         */
-        /* Cache ElevenLabs in background so the NEXT play uses it.     */
-        speakBrowser(text, lang, onDone);
-        if (!cached) cacheAudio(key, text, lang);
-
-    }, [slides, stopAudio]);
+    }, [slides]);
 
     useEffect(() => { speakRef.current = doSpeak; }, [doSpeak]);
 
     const togglePlay = () => {
-        if (playing) { stopAudio(); setPlaying(false); }
-        else {
-            // MUST call unlockAudio synchronously here — iOS blocks audio from async callbacks
-            unlockAudio(audioRef.current);
+        // MUST call unlockAudio synchronously — iOS blocks audio from async callbacks
+        unlockAudio();
+        if (playing) {
+            stopAudio();
+            setPlaying(false);
+        } else if (lessonAudioUrl && audioReady) {
+            // Lesson audio ready — seek to current slide start and play
+            const audio = audioRef.current;
+            if (audio?.duration) {
+                audio.currentTime = slideFractions[idx] * audio.duration;
+            }
+            audio.play().catch(() => doSpeak(idx));
+            setPlaying(true);
+        } else {
+            // Lesson audio still loading — fall back to browser TTS
+            stopAudio();
             doSpeak(idx);
         }
     };
 
     const goTo = (n, dir) => {
         if (n < 0 || n >= slides.length) return;
-        unlockAudio(audioRef.current);
-        stopAudio();
-        setPlaying(false);
+        unlockAudio();
         setDirection(dir || (n > idx ? 'next' : 'prev'));
         setIdx(n);
+        if (lessonAudioUrl && audioRef.current?.duration) {
+            // Seek lesson audio to the new slide's start position
+            audioRef.current.currentTime = slideFractions[n] * audioRef.current.duration;
+        }
+        if (!playing) stopAudio();
     };
 
     if (!lesson || slides.length === 0) {
@@ -543,8 +632,13 @@ function LessonPlayer() {
                 </button>
                 <button className={`lp-play${playing ? ' active' : ''}`} onClick={togglePlay}>
                     {playing ? <Pause size={22} /> : <Play size={22} fill="currentColor" />}
-                    <span>{playing ? 'Pause' : 'Play Lesson'}</span>
+                    <span>{playing ? 'Pause' : audioFetching ? 'Preparing audio...' : audioReady ? 'Play Lesson' : 'Play Lesson'}</span>
                 </button>
+                {audioFetching && (
+                    <span style={{ fontSize: '0.7rem', color: 'var(--accent-color)', opacity: 0.75, marginTop: '4px', display: 'block', textAlign: 'center' }}>
+                        ✦ Generating AI voice...
+                    </span>
+                )}
                 <button className="lp-nav" onClick={() => goTo(idx + 1, 'next')} disabled={idx === slides.length - 1}>
                     <SkipForward size={18} />
                 </button>

@@ -13,6 +13,7 @@ const fs       = require('fs');
 const cors     = require('cors');
 const crypto      = require('crypto');
 const nodemailer  = require('nodemailer');
+const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts');
 
 const app = express();
 app.use(cors({
@@ -30,7 +31,7 @@ const GROQ_API_KEY         = process.env.GROQ_API_KEY;
 const PEXELS_API_KEY       = process.env.PEXELS_API_KEY       || '';
 const SUPABASE_URL         = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
-const ELEVENLABS_API_KEY   = process.env.ELEVENLABS_API_KEY   || '';
+
 const WORKOS_API_KEY       = process.env.WORKOS_API_KEY       || '';
 const WORKOS_CLIENT_ID     = process.env.WORKOS_CLIENT_ID     || '';
 const WORKOS_REDIRECT_URI  = process.env.WORKOS_REDIRECT_URI  ||
@@ -38,21 +39,96 @@ const WORKOS_REDIRECT_URI  = process.env.WORKOS_REDIRECT_URI  ||
         ? 'https://learnflux-rho.vercel.app/auth/callback'
         : 'http://localhost:5173/auth/callback');
 
-// ── ElevenLabs TTS (optional — falls back to browser TTS if not configured) ──
-// Adam — deep male voice, multilingual v2, works for both English and Hindi
-const EL_VOICE_EN = 'pNInz6obpgDQGcFmaJgB'; // Adam — male, bold, clear
-const EL_VOICE_HI = 'pNInz6obpgDQGcFmaJgB'; // Adam — male, multilingual v2, works for Hindi
-const EL_MODEL    = 'eleven_multilingual_v2';
-const audioCache  = new Map();               // key: "lang:md5(text)" → Buffer
+// ── TTS Providers ────────────────────────────────────────────────────
+// Priority: Google Cloud TTS → OpenAI TTS → Microsoft Edge TTS (always free)
+//
+// Microsoft Edge TTS is the default — no API key, neural quality, free forever.
+// Google / OpenAI keys override it when set.
 
-const elConfigured = !!ELEVENLABS_API_KEY;
-if (elConfigured) {
-    console.log('✓ ElevenLabs TTS configured');
-} else {
-    console.log('⚠  ELEVENLABS_API_KEY not set — lesson player will use browser TTS');
-}
+const GOOGLE_TTS_API_KEY = process.env.GOOGLE_TTS_API_KEY || '';
+const GTTS_VOICE_EN      = 'en-US-Wavenet-B';
+const GTTS_VOICE_HI      = 'hi-IN-Wavenet-B';
+
+const OPENAI_API_KEY     = process.env.OPENAI_API_KEY || '';
+const OPENAI_TTS_VOICE   = 'onyx';
+
+// Edge TTS voices (Microsoft neural, same engine as Azure TTS, free)
+const EDGE_VOICE_EN      = 'en-US-GuyNeural';    // deep male English
+const EDGE_VOICE_HI      = 'hi-IN-MadhurNeural'; // male Hindi
+
+const AUDIO_BUCKET       = 'lesson-audio';
+const audioCache         = new Map();      // key → { buf, contentType }
+const audioInFlight      = new Map();      // key → Promise<{buf,contentType}>
+
+const gttsConfigured   = !!GOOGLE_TTS_API_KEY;
+const openaiConfigured = !!OPENAI_API_KEY;
+// Edge TTS is always available — no key needed
+console.log(
+    gttsConfigured   ? '✓ Google Cloud TTS configured' :
+    openaiConfigured ? `✓ OpenAI TTS configured — voice: ${OPENAI_TTS_VOICE}` :
+                       '✓ Microsoft Edge TTS ready (free, neural quality)'
+);
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+/** Unified TTS — Google → OpenAI → Microsoft Edge TTS */
+async function generateTTS(text, language) {
+    if (gttsConfigured)   { const buf = await generateGoogleTTS(text, language); return { buf, contentType: 'audio/mpeg' }; }
+    if (openaiConfigured) return generateOpenAITTS(text, language);
+    return generateEdgeTTS(text, language);
+}
+
+/** Generate MP3 audio via Google Cloud TTS REST API */
+async function generateGoogleTTS(text, language) {
+    const textSlice  = text.slice(0, 4800);
+    const langCode   = language === 'hi' ? 'hi-IN' : 'en-US';
+    const voiceName  = language === 'hi' ? GTTS_VOICE_HI : GTTS_VOICE_EN;
+    console.log(`[TTS] Google TTS | lang=${language} | voice=${voiceName} | chars=${textSlice.length}`);
+    const res = await fetch(
+        `https://texttospeech.googleapis.com/v1/text:synthesize?key=${GOOGLE_TTS_API_KEY}`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ input: { text: textSlice }, voice: { languageCode: langCode, name: voiceName, ssmlGender: 'MALE' }, audioConfig: { audioEncoding: 'MP3', speakingRate: 0.92, pitch: -1.0 } }) }
+    );
+    if (!res.ok) { const e = await res.text(); throw new Error(`Google TTS ${res.status}: ${e}`); }
+    const data = await res.json();
+    if (!data.audioContent) throw new Error('Google TTS returned no audioContent');
+    const buf = Buffer.from(data.audioContent, 'base64');
+    console.log(`[TTS] ✓ Google TTS ${buf.length} bytes`);
+    return buf;
+}
+
+/** Generate MP3 via OpenAI TTS */
+async function generateOpenAITTS(text, language) {
+    const textSlice = text.slice(0, 4096);
+    console.log(`[TTS] OpenAI TTS | voice=${OPENAI_TTS_VOICE} | lang=${language} | chars=${textSlice.length}`);
+    const res = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'tts-1', input: textSlice, voice: OPENAI_TTS_VOICE, response_format: 'mp3', speed: 0.95 }),
+    });
+    if (!res.ok) { const e = await res.text(); throw new Error(`OpenAI TTS ${res.status}: ${e}`); }
+    const buf = Buffer.from(await res.arrayBuffer());
+    console.log(`[TTS] ✓ OpenAI TTS ${buf.length} bytes`);
+    return { buf, contentType: 'audio/mpeg' };
+}
+
+/** Generate MP3 via Microsoft Edge TTS — free, neural voices, no API key needed */
+async function generateEdgeTTS(text, language) {
+    const voice = language === 'hi' ? EDGE_VOICE_HI : EDGE_VOICE_EN;
+    console.log(`[TTS] Edge TTS | voice=${voice} | chars=${text.length}`);
+    const tts = new MsEdgeTTS();
+    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    const chunks = [];
+    const { audioStream } = tts.toStream(text);
+    await new Promise((resolve, reject) => {
+        audioStream.on('data',  chunk => chunks.push(chunk));
+        audioStream.on('end',   resolve);
+        audioStream.on('error', reject);
+    });
+    const buf = Buffer.concat(chunks);
+    console.log(`[TTS] ✓ Edge TTS ${buf.length} bytes`);
+    return { buf, contentType: 'audio/mpeg' };
+}
 
 // ── Welcome Email ────────────────────────────────────────────────
 const SMTP_HOST = process.env.SMTP_HOST || '';
@@ -537,60 +613,140 @@ app.post('/reanalyze', optionalAuth, async (req, res) => {
     }
 });
 
-// ── POST /generate-audio — ElevenLabs TTS ────────────────────────────
+// ── POST /generate-audio — per-slide TTS (Google or HuggingFace) ─────
 app.post('/generate-audio', async (req, res) => {
-    const { text, language } = req.body;
-    console.log('Audio generation request');
-    console.log('Language:', language);
-    console.log('Text:', text);
+    const { text, language = 'en' } = req.body;
     if (!text) return res.status(400).json({ error: 'text required' });
+    // Edge TTS is always available — never return { available: false } for per-slide audio
 
-    if (!elConfigured) return res.json({ available: false });
+    const provider   = gttsConfigured ? 'gtts' : openaiConfigured ? 'openai' : 'edge';
+    const cacheKey   = `${provider}:${language}:${crypto.createHash('md5').update(text).digest('hex')}`;
+    const storagePath = `${cacheKey}.mp3`;
 
-    const cacheKey = `${language}:${crypto.createHash('md5').update(text).digest('hex')}`;
+    const serve = ({ buf, contentType }) => { res.set('Content-Type', contentType); res.send(buf); };
 
-    // Serve from cache if available
+    // 1 — in-memory cache (fastest)
     if (audioCache.has(cacheKey)) {
-        res.set('Content-Type', 'audio/mpeg');
-        return res.send(audioCache.get(cacheKey));
+        console.log(`[TTS] ✓ memory hit ${cacheKey}`);
+        return serve(audioCache.get(cacheKey));
     }
 
-    try {
-        const voiceId   = language === 'hi' ? EL_VOICE_HI : EL_VOICE_EN;
-        const textSlice = text.slice(0, 5000);
-        console.log(`[TTS] Requesting ${language.toUpperCase()} audio | voice=${voiceId} | model=${EL_MODEL} | chars=${textSlice.length}`);
+    // 2 — deduplicate concurrent requests for the same text
+    if (audioInFlight.has(cacheKey)) {
+        try {
+            return serve(await audioInFlight.get(cacheKey));
+        } catch { return res.status(500).json({ error: 'TTS generation failed' }); }
+    }
 
-        const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
-            method: 'POST',
-            headers: {
-                'xi-api-key':   ELEVENLABS_API_KEY,
-                'Content-Type': 'application/json',
-                'Accept':       'audio/mpeg',
-            },
-            body: JSON.stringify({
-                text:          textSlice,
-                model_id:      EL_MODEL,
-                output_format: 'mp3_44100_128',
-            }),
-        });
+    // 3 — Supabase Storage (survives server restarts), with 5s timeout
+    if (db) {
+        try {
+            const { data: stored, error: dlErr } = await Promise.race([
+                db.storage.from(AUDIO_BUCKET).download(storagePath),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('storage timeout')), 5000)),
+            ]);
+            if (!dlErr && stored) {
+                const buf = Buffer.from(await stored.arrayBuffer());
+                const contentType = 'audio/mpeg';
+                const entry = { buf, contentType };
+                audioCache.set(cacheKey, entry);
+                console.log(`[TTS] ✓ storage hit ${cacheKey} (${buf.length} bytes)`);
+                return serve(entry);
+            }
+        } catch (e) { console.warn('[TTS] storage check skipped:', e.message); }
+    }
 
-        if (!elRes.ok) {
-            const errText = await elRes.text();
-            console.error(`[ElevenLabs] HTTP ${elRes.status}:`, errText);
-            return res.status(500).json({ error: 'TTS generation failed', details: errText });
+    // 4 — Generate via configured TTS provider (deduplicated)
+    const genPromise = (async () => {
+        const entry = await generateTTS(text, language);
+        audioCache.set(cacheKey, entry);
+
+        // Persist to Supabase Storage (non-blocking)
+        if (db) {
+            db.storage.from(AUDIO_BUCKET)
+                .upload(storagePath, entry.buf, { contentType: entry.contentType, upsert: false })
+                .then(({ error }) => { if (error) console.warn('[TTS] storage upload:', error.message); })
+                .catch(() => {});
         }
+        return entry;
+    })();
 
-        const arrayBuf = await elRes.arrayBuffer();
-        const buf = Buffer.from(arrayBuf);
-
-        audioCache.set(cacheKey, buf);
-        console.log(`[TTS] ✓ Generated ${language.toUpperCase()} audio (${buf.length} bytes) — cached`);
-
-        res.set('Content-Type', 'audio/mpeg');
-        res.send(buf);
+    audioInFlight.set(cacheKey, genPromise);
+    try {
+        serve(await genPromise);
     } catch (err) {
-        console.error('[ElevenLabs]', err.message);
+        console.error('[TTS] /generate-audio failed:', err.message);
         res.status(500).json({ error: 'TTS generation failed', details: err.message });
+    } finally {
+        audioInFlight.delete(cacheKey);
+    }
+});
+
+// ── POST /generate-lesson-audio — full-lesson audio (all providers) ──────
+// Generates one MP3 for the entire lesson. Edge TTS handles unlimited length.
+app.post('/generate-lesson-audio', async (req, res) => {
+    const { lessonId, narration, language = 'en' } = req.body;
+    if (!narration || !lessonId) return res.status(400).json({ error: 'lessonId and narration required' });
+
+    const cacheKey    = `lesson-${lessonId}-${language}`;
+    const storagePath = `${cacheKey}.mp3`;
+    const serve       = ({ buf, contentType }) => { res.set('Content-Type', contentType); res.send(buf); };
+
+    // 1 — in-memory
+    if (audioCache.has(cacheKey)) {
+        console.log(`[TTS] ✓ lesson memory hit: ${cacheKey}`);
+        return serve(audioCache.get(cacheKey));
+    }
+
+    // 2 — in-flight deduplication
+    if (audioInFlight.has(cacheKey)) {
+        try { return serve(await audioInFlight.get(cacheKey)); }
+        catch { return res.status(500).json({ error: 'TTS generation failed' }); }
+    }
+
+    // 3 — Supabase Storage (5s timeout)
+    if (db) {
+        try {
+            const { data: stored, error: dlErr } = await Promise.race([
+                db.storage.from(AUDIO_BUCKET).download(storagePath),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 5000)),
+            ]);
+            if (!dlErr && stored) {
+                const buf = Buffer.from(await stored.arrayBuffer());
+                const entry = { buf, contentType: 'audio/mpeg' };
+                audioCache.set(cacheKey, entry);
+                console.log(`[TTS] ✓ lesson storage hit: ${cacheKey} (${buf.length} bytes)`);
+                return serve(entry);
+            }
+        } catch (e) { console.warn(`[TTS] storage check skipped (${e.message}), generating...`); }
+    }
+
+    // 4 — Generate via Google or OpenAI TTS (full lesson narration)
+    console.log(`[TTS] generating lesson audio | id=${lessonId} | lang=${language}`);
+    const genPromise = (async () => {
+        const entry = await generateTTS(narration, language);
+        audioCache.set(cacheKey, entry);
+
+        // Persist to Supabase (non-blocking)
+        if (db) {
+            db.storage.from(AUDIO_BUCKET)
+                .upload(storagePath, entry.buf, { contentType: entry.contentType, upsert: true })
+                .then(({ error }) => {
+                    if (error) console.warn('[TTS] Supabase upload failed:', error.message);
+                    else       console.log(`[TTS] ✓ lesson audio saved to storage: ${storagePath}`);
+                }).catch(() => {});
+        }
+        return entry;
+    })();
+
+    audioInFlight.set(cacheKey, genPromise);
+    try {
+        serve(await genPromise);
+    } catch (err) {
+        console.error('[TTS] lesson audio generation failed:', err.message);
+        res.status(500).json({ error: 'TTS generation failed', details: err.message });
+    } finally {
+        audioInFlight.delete(cacheKey);
     }
 });
 
