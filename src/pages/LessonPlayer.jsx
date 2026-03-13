@@ -257,7 +257,6 @@ function LessonPlayer() {
     const speakRef    = useRef(null);
     const langRef     = useRef('en');
     const audioRef    = useRef(null);
-    const pollRef     = useRef(null);
     const genRef      = useRef(0);
     const containerRef = useRef(null);
     const timerRef    = useRef(null);
@@ -347,7 +346,6 @@ function LessonPlayer() {
         const startTime = Date.now();
         const onDone = () => {
             if (isStale()) return;
-            setAudioLoading(false);
             const wait = Math.max(0, 5000 - (Date.now() - startTime));
             setTimeout(() => {
                 if (isStale()) return;
