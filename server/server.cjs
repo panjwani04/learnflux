@@ -33,7 +33,10 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY;
 const ELEVENLABS_API_KEY   = process.env.ELEVENLABS_API_KEY   || '';
 const WORKOS_API_KEY       = process.env.WORKOS_API_KEY       || '';
 const WORKOS_CLIENT_ID     = process.env.WORKOS_CLIENT_ID     || '';
-const WORKOS_REDIRECT_URI  = process.env.WORKOS_REDIRECT_URI  || 'http://localhost:5173/auth/callback';
+const WORKOS_REDIRECT_URI  = process.env.WORKOS_REDIRECT_URI  ||
+    (process.env.NODE_ENV === 'production'
+        ? 'https://learnflux-rho.vercel.app/auth/callback'
+        : 'http://localhost:5173/auth/callback');
 
 // ── ElevenLabs TTS (optional — falls back to browser TTS if not configured) ──
 // Adam — deep male voice, multilingual v2, works for both English and Hindi
