@@ -1,22 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, Pause, SkipBack, SkipForward, ChevronLeft, Repeat, BookOpen } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, ChevronLeft, Repeat, BookOpen, Maximize2, Minimize2, Volume2 } from 'lucide-react';
 import { API } from '../lib/api';
 import './LessonPlayer.css';
 
-/* ── Browser TTS fallback (used when ElevenLabs is not configured) ── */
+/* ── Browser TTS fallback ── */
 if (typeof window !== 'undefined') {
     speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 }
 
 function pickMaleVoice(voices, langCode) {
-    // Known male voice names across browsers
     const maleNames = ['david', 'mark', 'james', 'daniel', 'google uk english male', 'microsoft david', 'microsoft mark', 'microsoft ravi', 'male'];
     const langVoices = voices.filter(v => v.lang === langCode || v.lang.startsWith(langCode.split('-')[0]));
-    // Try to find a male voice by name
     const male = langVoices.find(v => maleNames.some(m => v.name.toLowerCase().includes(m)));
     if (male) return male;
-    // For Hindi, pick any available Hindi voice
     if (langVoices.length > 0) return langVoices[0];
     return null;
 }
@@ -27,15 +24,15 @@ function speakBrowser(text, language, onDone) {
     const langCode   = language === 'hi' ? 'hi-IN' : 'en-US';
     const selected   = pickMaleVoice(voices, langCode);
     utterance.lang   = langCode;
-    utterance.pitch  = 0.9;  // slightly lower pitch for deeper male tone
-    utterance.rate   = 0.95; // slightly slower for clarity
+    utterance.pitch  = 0.9;
+    utterance.rate   = 0.95;
     if (selected)    utterance.voice = selected;
     if (onDone)      utterance.onend = onDone;
     speechSynthesis.cancel();
     speechSynthesis.speak(utterance);
 }
 
-/* ── Image fetching ──────────────────────────────────────────── */
+/* ── Image fetching ── */
 function cleanKeyword(text) {
     if (!text) return 'education';
     const stop = new Set(['and','the','of','in','a','an','to','for','with','is','are','chapter','unit','lesson','part','section','introduction','class','std','cbse','ncert','by','from','on','as','or','its','their','this','that','these','those','how','what','why','when','where']);
@@ -90,7 +87,7 @@ async function fetchSlideImage(rawKeyword) {
     return getPicsumUrl(keyword);
 }
 
-/* ── Build slides ────────────────────────────────────────────── */
+/* ── Build slides ── */
 function buildSlides(lesson) {
     const pts            = lesson.keyPoints       || [];
     const keyPointsHindi = lesson.keyPointsHindi  || [];
@@ -118,13 +115,11 @@ function buildSlides(lesson) {
     return slides;
 }
 
-/* ── Clean text helper ───────────────────────────────────────── */
 function cleanText(t) {
     return String(t || '').replace(/\s+/g, ' ').trim();
 }
 
-/* ── Module-level audio cache (persists across navigations) ──── */
-// Values: blob URL string = ready, 'pending' = generating, absent = not started
+/* ── Audio cache ── */
 const _audioCache = new Map();
 
 function buildSlideText(s) {
@@ -137,9 +132,6 @@ function buildSlideText(s) {
 
 async function fetchAudio(text, language) {
     if (!text?.trim()) return null;
-    console.log('Selected language:', language);
-    console.log('Text sent to audio generator:', text);
-    console.log(`[Audio] Fetching ${language.toUpperCase()} audio | "${text.slice(0, 80)}..."`);
     try {
         const res = await fetch(`${API}/generate-audio`, {
             method: 'POST',
@@ -147,45 +139,47 @@ async function fetchAudio(text, language) {
             body: JSON.stringify({ text, language }),
         });
         const ct = res.headers.get('Content-Type') || '';
-        if (res.ok && ct.includes('audio')) {
-            console.log(`[Audio] ✓ ${language.toUpperCase()} audio received`);
-            return URL.createObjectURL(await res.blob());
-        }
-        if (res.ok) console.warn('[Audio] Server returned JSON (ElevenLabs not configured) — using browser TTS');
-        else        console.error('[Audio] Server error', res.status, await res.text().catch(() => ''));
+        if (res.ok && ct.includes('audio')) return URL.createObjectURL(await res.blob());
         return null;
-    } catch (e) { console.error('[Audio] Fetch failed:', e.message); return null; }
+    } catch { return null; }
 }
 
 function cacheAudio(key, text, language) {
-    if (_audioCache.has(key)) return; // already cached or generating
+    if (_audioCache.has(key)) return;
     _audioCache.set(key, 'pending');
     fetchAudio(text, language).then(url => {
         if (url) _audioCache.set(key, url);
-        else     _audioCache.delete(key); // clear pending so it can retry
+        else     _audioCache.delete(key);
     });
 }
 
-/* ── AI Avatar ───────────────────────────────────────────────── */
+/* ── Format seconds to M:SS ── */
+function fmtTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+/* ── AI Avatar ── */
 function AIAvatar({ speaking }) {
     return (
         <div className={`av-wrap${speaking ? ' av-on' : ''}`}>
             <div className="av-ring" />
             <div className="av-body">
                 <svg viewBox="0 0 100 100" className="av-face">
-                    <circle cx="50" cy="50" r="50" fill="#1e1b4b" />
-                    <circle cx="50" cy="40" r="26" fill="#312e81" stroke="#6366f1" strokeWidth="1.5" />
-                    <ellipse cx="40" cy="36" rx="4.5" ry={speaking ? 5.5 : 3.5} fill="#a5b4fc" />
-                    <ellipse cx="60" cy="36" rx="4.5" ry={speaking ? 5.5 : 3.5} fill="#a5b4fc" />
-                    <circle cx="41" cy="37" r="2" fill="#0f172a" /><circle cx="61" cy="37" r="2" fill="#0f172a" />
+                    <circle cx="50" cy="50" r="50" fill="#0a120a" />
+                    <circle cx="50" cy="40" r="26" fill="#0f1f0f" stroke="#3ddc84" strokeWidth="1.5" />
+                    <ellipse cx="40" cy="36" rx="4.5" ry={speaking ? 5.5 : 3.5} fill="#3ddc84" />
+                    <ellipse cx="60" cy="36" rx="4.5" ry={speaking ? 5.5 : 3.5} fill="#3ddc84" />
+                    <circle cx="41" cy="37" r="2" fill="#070d07" /><circle cx="61" cy="37" r="2" fill="#070d07" />
                     <circle cx="42" cy="35.5" r="1" fill="white" opacity="0.8" /><circle cx="62" cy="35.5" r="1" fill="white" opacity="0.8" />
                     {speaking
-                        ? <ellipse cx="50" cy="50" rx="8" ry="5" fill="#4f46e5" />
-                        : <path d="M42 50 Q50 57 58 50" stroke="#6366f1" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+                        ? <ellipse cx="50" cy="50" rx="8" ry="5" fill="#3ddc84" />
+                        : <path d="M42 50 Q50 57 58 50" stroke="#3ddc84" strokeWidth="2.5" fill="none" strokeLinecap="round" />
                     }
-                    <path d="M10 100 Q18 72 38 70 L62 70 Q82 72 90 100 Z" fill="#312e81" stroke="#6366f1" strokeWidth="1.5" />
-                    <circle cx="50" cy="84" r="9" fill="#4f46e5" />
-                    <text x="50" y="88.5" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold" fontFamily="sans-serif">AI</text>
+                    <path d="M10 100 Q18 72 38 70 L62 70 Q82 72 90 100 Z" fill="#0f1f0f" stroke="#3ddc84" strokeWidth="1.5" />
+                    <circle cx="50" cy="84" r="9" fill="#3ddc84" />
+                    <text x="50" y="88.5" textAnchor="middle" fill="#070d07" fontSize="9" fontWeight="bold" fontFamily="sans-serif">AI</text>
                 </svg>
             </div>
             {speaking && (
@@ -197,50 +191,54 @@ function AIAvatar({ speaking }) {
     );
 }
 
-/* ── Slide type config ───────────────────────────────────────── */
+/* ── Slide type config ── */
 const SLIDE_STYLE = {
-    intro:   { overlay: 'rgba(10,6,40,0.58)',  accent: '#6366f1', label: 'Overview'    },
-    point:   { overlay: 'rgba(2,18,10,0.58)',  accent: '#10b981', label: 'Key Point'   },
-    explain: { overlay: 'rgba(18,10,0,0.58)',  accent: '#f59e0b', label: 'Explanation' },
-    defs:    { overlay: 'rgba(18,2,16,0.58)',  accent: '#ec4899', label: 'Definitions' },
+    intro:   { overlay: 'rgba(7,13,7,0.62)',  accent: '#3ddc84', label: 'Overview'    },
+    point:   { overlay: 'rgba(7,13,7,0.60)',  accent: '#3ddc84', label: 'Key Point'   },
+    explain: { overlay: 'rgba(7,13,7,0.60)',  accent: '#f59e0b', label: 'Explanation' },
+    defs:    { overlay: 'rgba(7,13,7,0.60)',  accent: '#a78bfa', label: 'Definitions' },
 };
 
-/* ── Main component ──────────────────────────────────────────── */
+/* ── Main component ── */
 function LessonPlayer() {
-    const navigate = useNavigate();
-    const lesson   = JSON.parse(localStorage.getItem('learnflux_current') || 'null');
-    const slides   = lesson ? buildSlides(lesson) : [];
+    const navigate   = useNavigate();
+    const lesson     = JSON.parse(localStorage.getItem('learnflux_current') || 'null');
+    const slides     = lesson ? buildSlides(lesson) : [];
 
     const [idx,          setIdx]         = useState(0);
+    const [direction,    setDirection]   = useState('next'); // 'next' | 'prev'
     const [playing,      setPlaying]     = useState(false);
     const [autoAdv,      setAutoAdv]     = useState(true);
     const [bgImg,        setBgImg]       = useState(null);
     const [bgReady,      setBgReady]     = useState(false);
     const [language,     setLanguage]    = useState('en');
     const [audioLoading, setAudioLoading] = useState(false);
+    const [fullscreen,   setFullscreen]  = useState(false);
+    const [elapsed,      setElapsed]     = useState(0);   // seconds playing total
+    const [slideElapsed, setSlideElapsed] = useState(0);  // seconds on current slide
 
-    const stateRef = useRef({ idx: 0, auto: true });
-    const speakRef = useRef(null);
-    const langRef  = useRef('en');
-    const audioRef = useRef(null); // <audio> element
-    const pollRef  = useRef(null); // interval ID for pending-audio poll
-    const genRef   = useRef(0);    // generation counter — incremented on every slide change/stop
+    const stateRef    = useRef({ idx: 0, auto: true });
+    const speakRef    = useRef(null);
+    const langRef     = useRef('en');
+    const audioRef    = useRef(null);
+    const pollRef     = useRef(null);
+    const genRef      = useRef(0);
+    const containerRef = useRef(null);
+    const timerRef    = useRef(null);
+    const slideTimerRef = useRef(null);
 
     useEffect(() => { stateRef.current.idx  = idx;     }, [idx]);
     useEffect(() => { stateRef.current.auto = autoAdv; }, [autoAdv]);
     useEffect(() => { langRef.current       = language;}, [language]);
 
-    /* Trigger async voice load on mount */
     useEffect(() => { speechSynthesis.getVoices(); }, []);
 
-    /* Pre-generate audio for ALL slides when language changes (fires on mount too) */
+    /* Pre-generate audio for all slides */
     useEffect(() => {
         const lang = language;
-        console.log('Generating audio for language:', lang);
         slides.forEach((s, si) => {
             const englishText = buildSlideText(s);
             const text = lang === 'hi' ? (s.bodyHindi || englishText) : englishText;
-            console.log(`[PreGen] Slide ${si} | lang=${lang} | text="${text.slice(0, 80)}"`);
             cacheAudio(`${si}-${lang}`, text, lang);
         });
     }, [language, slides]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -254,16 +252,49 @@ function LessonPlayer() {
         return () => { alive = false; };
     }, [idx]);
 
-    /* Stop all audio (ElevenLabs + browser TTS + pending poll) */
+    /* Global elapsed timer — runs while playing */
+    useEffect(() => {
+        if (playing) {
+            timerRef.current = setInterval(() => setElapsed(e => e + 1), 1000);
+        } else {
+            clearInterval(timerRef.current);
+        }
+        return () => clearInterval(timerRef.current);
+    }, [playing]);
+
+    /* Per-slide elapsed timer — resets on slide change */
+    useEffect(() => {
+        setSlideElapsed(0);
+        if (playing) {
+            slideTimerRef.current = setInterval(() => setSlideElapsed(e => e + 1), 1000);
+        }
+        return () => clearInterval(slideTimerRef.current);
+    }, [idx, playing]);
+
+    /* Fullscreen change listener */
+    useEffect(() => {
+        const handler = () => setFullscreen(!!document.fullscreenElement);
+        document.addEventListener('fullscreenchange', handler);
+        return () => document.removeEventListener('fullscreenchange', handler);
+    }, []);
+
+    const toggleFullscreen = () => {
+        if (!fullscreen) {
+            containerRef.current?.requestFullscreen?.();
+        } else {
+            document.exitFullscreen?.();
+        }
+    };
+
+    /* Stop all audio */
     const stopAudio = useCallback(() => {
-        genRef.current += 1; // invalidate any pending onDone callbacks
+        genRef.current += 1;
         clearInterval(pollRef.current);
         setAudioLoading(false);
         if (audioRef.current) { audioRef.current.onended = null; audioRef.current.pause(); audioRef.current.src = ''; }
         speechSynthesis.cancel();
     }, []);
 
-    /* Cancel audio on unmount */
     useEffect(() => () => stopAudio(), [stopAudio]);
 
     /* Auto-start on load */
@@ -275,35 +306,32 @@ function LessonPlayer() {
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const doSpeak = useCallback((si) => {
-        stopAudio(); // cancel any previous speech first
+        stopAudio();
         const s = slides[si];
         if (!s) return;
 
-        const gen         = ++genRef.current; // new generation for this speak call
+        const gen         = ++genRef.current;
         const wantHindi   = langRef.current === 'hi';
         const englishText = buildSlideText(s);
         const hindiText   = s.bodyHindi?.trim();
-        // Use Hindi text+lang only if we actually have Hindi content; otherwise fall back to English
         const text        = wantHindi && hindiText ? hindiText : englishText;
         const lang        = wantHindi && hindiText ? 'hi' : 'en';
+        const isStale     = () => genRef.current !== gen;
 
-        /* Check if this generation is still current */
-        const isStale = () => genRef.current !== gen;
-
-        /* Minimum 5 s per slide so it doesn't flash past */
         const startTime = Date.now();
         const onDone = () => {
-            if (isStale()) return; // slide changed — ignore
+            if (isStale()) return;
             clearInterval(pollRef.current);
             setAudioLoading(false);
             const wait = Math.max(0, 5000 - (Date.now() - startTime));
             setTimeout(() => {
-                if (isStale()) return; // slide changed during wait
+                if (isStale()) return;
                 setPlaying(false);
                 if (!stateRef.current.auto) return;
                 const next = stateRef.current.idx + 1;
                 if (next < slides.length) {
                     stateRef.current.idx = next;
+                    setDirection('next');
                     setIdx(next);
                     setTimeout(() => { if (!isStale()) speakRef.current?.(next); }, 1200);
                 }
@@ -324,10 +352,8 @@ function LessonPlayer() {
             audioRef.current.play().catch(() => { if (!isStale()) speakBrowser(text, lang, onDone); });
         };
 
-        /* ── Already cached and ready ── */
         if (cached && cached !== 'pending') { playBlob(cached); return; }
 
-        /* ── Currently generating — poll until ready ── */
         if (cached === 'pending') {
             setAudioLoading(true);
             pollRef.current = setInterval(() => {
@@ -339,7 +365,6 @@ function LessonPlayer() {
             return;
         }
 
-        /* ── Not in cache — generate on demand ── */
         setAudioLoading(true);
         _audioCache.set(key, 'pending');
         fetchAudio(text, lang).then(url => {
@@ -360,10 +385,11 @@ function LessonPlayer() {
         else         { doSpeak(idx); }
     };
 
-    const goTo = (n) => {
+    const goTo = (n, dir) => {
         if (n < 0 || n >= slides.length) return;
         stopAudio();
         setPlaying(false);
+        setDirection(dir || (n > idx ? 'next' : 'prev'));
         setIdx(n);
     };
 
@@ -378,15 +404,16 @@ function LessonPlayer() {
         );
     }
 
-    const slide = slides[idx];
-    const ss    = SLIDE_STYLE[slide.type] || SLIDE_STYLE.intro;
-    const pct   = ((idx + 1) / slides.length) * 100;
+    const slide       = slides[idx];
+    const ss          = SLIDE_STYLE[slide.type] || SLIDE_STYLE.intro;
+    const pct         = ((idx + 1) / slides.length) * 100;
     const displayText = language === 'hi' && slide.bodyHindi ? slide.bodyHindi : (slide.body || '');
+    // Estimate ~45s per slide
+    const totalEst    = slides.length * 45;
 
     return (
-        <div className="lp-page fade-in">
+        <div className={`lp-page fade-in${fullscreen ? ' lp-fs' : ''}`} ref={containerRef}>
 
-            {/* Hidden audio element for ElevenLabs playback */}
             <audio ref={audioRef} style={{ display: 'none' }} />
 
             {/* ── Top bar ── */}
@@ -405,18 +432,28 @@ function LessonPlayer() {
                 <button className={`lp-auto${autoAdv ? ' on' : ''}`} onClick={() => setAutoAdv(v => !v)}>
                     <Repeat size={13} /> Auto {autoAdv ? 'On' : 'Off'}
                 </button>
+                <button className="lp-fs-btn" onClick={toggleFullscreen} title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}>
+                    {fullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                </button>
             </div>
 
             {/* ── Progress bar ── */}
-            <div className="lp-prog-track">
-                <div className="lp-prog-fill" style={{ width: `${pct}%`, background: ss.accent }} />
-            </div>
-            <div className="lp-counter-row">
-                <span className="lp-counter">{idx + 1} / {slides.length} slides</span>
+            <div className="lp-prog-wrap">
+                <div className="lp-prog-track">
+                    <div className={`lp-prog-fill${playing ? ' playing' : ''}`}
+                        style={{ width: `${pct}%`, '--accent': ss.accent }} />
+                </div>
+                <div className="lp-time-row">
+                    <span className="lp-counter">{idx + 1} / {slides.length} slides</span>
+                    <span className="lp-timer">
+                        <Volume2 size={11} style={{ opacity: playing ? 1 : 0.4 }} />
+                        {fmtTime(elapsed)} · ~{fmtTime(totalEst)}
+                    </span>
+                </div>
             </div>
 
             {/* ── Main stage ── */}
-            <div className="lp-stage" key={idx}>
+            <div className="lp-stage" key={idx} data-dir={direction}>
 
                 {bgImg && (
                     <img src={bgImg} className={`lp-bg${bgReady ? ' ready' : ''}`}
@@ -471,7 +508,9 @@ function LessonPlayer() {
                 <div className="lp-presenter-bar">
                     <AIAvatar speaking={playing} />
                     <div className="lp-caption-wrap">
-                        <span className="lp-caption-label">AI Presenter · {language === 'hi' ? 'हिंदी' : 'English'}</span>
+                        <span className="lp-caption-label" style={{ color: ss.accent }}>
+                            AI Presenter · {language === 'hi' ? 'हिंदी' : 'English'}
+                        </span>
                         <p className="lp-caption">
                             {audioLoading
                                 ? (language === 'hi' ? 'AI आवाज़ तैयार हो रही है...' : 'Generating AI voice...')
@@ -481,19 +520,21 @@ function LessonPlayer() {
                             }
                         </p>
                     </div>
+                    {/* Per-slide time */}
+                    <span className="lp-slide-time">{fmtTime(slideElapsed)}</span>
                 </div>
             </div>
 
             {/* ── Controls ── */}
             <div className="lp-controls">
-                <button className="lp-nav" onClick={() => goTo(idx - 1)} disabled={idx === 0}>
+                <button className="lp-nav" onClick={() => goTo(idx - 1, 'prev')} disabled={idx === 0}>
                     <SkipBack size={18} />
                 </button>
                 <button className={`lp-play${playing ? ' active' : ''}`} onClick={togglePlay}>
                     {playing ? <Pause size={22} /> : <Play size={22} fill="currentColor" />}
-                    {playing ? 'Pause' : 'Play Lesson'}
+                    <span>{playing ? 'Pause' : 'Play Lesson'}</span>
                 </button>
-                <button className="lp-nav" onClick={() => goTo(idx + 1)} disabled={idx === slides.length - 1}>
+                <button className="lp-nav" onClick={() => goTo(idx + 1, 'next')} disabled={idx === slides.length - 1}>
                     <SkipForward size={18} />
                 </button>
             </div>
