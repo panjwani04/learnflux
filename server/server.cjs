@@ -45,15 +45,9 @@ const EL_VOICE_HI = 'pNInz6obpgDQGcFmaJgB'; // Adam — male, multilingual v2, w
 const EL_MODEL    = 'eleven_multilingual_v2';
 const audioCache  = new Map();               // key: "lang:md5(text)" → Buffer
 
-let elClient = null;
-if (ELEVENLABS_API_KEY) {
-    try {
-        const { ElevenLabsClient } = require('elevenlabs');
-        elClient = new ElevenLabsClient({ apiKey: ELEVENLABS_API_KEY });
-        console.log('✓ ElevenLabs TTS configured');
-    } catch (e) {
-        console.warn('⚠  elevenlabs package missing — run: npm install elevenlabs');
-    }
+const elConfigured = !!ELEVENLABS_API_KEY;
+if (elConfigured) {
+    console.log('✓ ElevenLabs TTS configured');
 } else {
     console.log('⚠  ELEVENLABS_API_KEY not set — lesson player will use browser TTS');
 }
@@ -551,7 +545,7 @@ app.post('/generate-audio', async (req, res) => {
     console.log('Text:', text);
     if (!text) return res.status(400).json({ error: 'text required' });
 
-    if (!elClient) return res.json({ available: false });
+    if (!elConfigured) return res.json({ available: false });
 
     const cacheKey = `${language}:${crypto.createHash('md5').update(text).digest('hex')}`;
 
@@ -564,17 +558,30 @@ app.post('/generate-audio', async (req, res) => {
     try {
         const voiceId   = language === 'hi' ? EL_VOICE_HI : EL_VOICE_EN;
         const textSlice = text.slice(0, 5000);
-        console.log(`[TTS] Requesting ${language.toUpperCase()} audio | voice=${voiceId} | model=${EL_MODEL} | text="${textSlice.slice(0, 80)}..."`);
+        console.log(`[TTS] Requesting ${language.toUpperCase()} audio | voice=${voiceId} | model=${EL_MODEL} | chars=${textSlice.length}`);
 
-        const stream = await elClient.textToSpeech.convert(voiceId, {
-            text:          textSlice,
-            model_id:      EL_MODEL,
-            output_format: 'mp3_44100_128',
+        const elRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+            method: 'POST',
+            headers: {
+                'xi-api-key':   ELEVENLABS_API_KEY,
+                'Content-Type': 'application/json',
+                'Accept':       'audio/mpeg',
+            },
+            body: JSON.stringify({
+                text:          textSlice,
+                model_id:      EL_MODEL,
+                output_format: 'mp3_44100_128',
+            }),
         });
 
-        const chunks = [];
-        for await (const chunk of stream) chunks.push(chunk);
-        const buf = Buffer.concat(chunks);
+        if (!elRes.ok) {
+            const errText = await elRes.text();
+            console.error(`[ElevenLabs] HTTP ${elRes.status}:`, errText);
+            return res.status(500).json({ error: 'TTS generation failed', details: errText });
+        }
+
+        const arrayBuf = await elRes.arrayBuffer();
+        const buf = Buffer.from(arrayBuf);
 
         audioCache.set(cacheKey, buf);
         console.log(`[TTS] ✓ Generated ${language.toUpperCase()} audio (${buf.length} bytes) — cached`);
