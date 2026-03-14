@@ -411,7 +411,11 @@
     gap: 0;
     margin-bottom: 2rem;
     border-bottom: 1px solid var(--border-color);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
 }
+.result-tabs::-webkit-scrollbar { display: none; }
 .tab-btn {
     display: flex;
     align-items: center;
@@ -663,3 +667,34 @@
 .regen-btn:hover:not(:disabled) { filter: brightness(1.1); }
 .regen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .regen-error { color: #f87171; font-size: 0.78rem; }
+
+/* ── Mobile responsive ── */
+@media (max-width: 600px) {
+    .result-page {
+        padding: 1rem;
+    }
+    .result-header h1 {
+        font-size: 1.25rem;
+    }
+    .tab-btn {
+        padding: 0.65rem 0.85rem;
+        font-size: 0.78rem;
+        white-space: nowrap;
+    }
+    .result-actions {
+        gap: 0.4rem;
+    }
+    .action-btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8rem;
+    }
+    .definitions-grid {
+        grid-template-columns: 1fr;
+    }
+    .quiz-options {
+        grid-template-columns: 1fr;
+    }
+    .flashcards-grid {
+        grid-template-columns: 1fr;
+    }
+}

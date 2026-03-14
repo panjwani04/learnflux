@@ -354,8 +354,10 @@
 /* ── Mobile ── */
 @media (max-width: 600px) {
     .lp-page {
-        padding: 0.4rem 0.75rem 0.3rem;
+        padding: 0.4rem 0.75rem calc(0.3rem + env(safe-area-inset-bottom, 0px));
         gap: 0.3rem;
+        height: calc(100dvh - 3.5rem);
+        max-height: calc(100dvh - 3.5rem);
     }
     .lp-topbar { gap: 0.4rem; }
     .lp-lesson-name { display: none; }

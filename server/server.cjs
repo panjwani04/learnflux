@@ -186,24 +186,55 @@ async function sendWelcomeEmail(user) {
     }
 }
 
-async function groqWithRetry(prompt, maxTokens, retries = 4) {
-    const delays = [8000, 12000, 20000, 30000]; // progressive back-off
-    for (let attempt = 0; attempt <= retries; attempt++) {
+// Model cascade for upload/structured calls: fast 8b → gemma2-9b → versatile 70b
+const UPLOAD_MODELS = ['llama-3.1-8b-instant', 'gemma2-9b-it', 'llama-3.3-70b-versatile'];
+// Model cascade for tutor calls: quality 70b → gemma2-9b → fast 8b
+const TUTOR_MODELS  = ['llama-3.3-70b-versatile', 'gemma2-9b-it', 'llama-3.1-8b-instant'];
+
+function isRateLimitErr(e) {
+    return e.message?.includes('429') || e.message?.includes('rate') || e.message?.includes('Rate limit');
+}
+
+async function groqWithRetry(prompt, maxTokens) {
+    for (const model of UPLOAD_MODELS) {
         try {
-            return await groqFast(prompt, maxTokens);
+            return await groqCall(prompt, maxTokens, model);
         } catch (e) {
-            const is429 = e.message?.includes('429') || e.message?.includes('rate') || e.message?.includes('Rate limit');
-            if (is429 && attempt < retries) {
-                const wait = delays[attempt] || 30000;
-                console.warn(`[AI] Rate limit hit, waiting ${wait / 1000}s before retry ${attempt + 1}/${retries}...`);
-                await sleep(wait);
+            if (isRateLimitErr(e)) {
+                console.warn(`[AI] Rate limit on ${model} — switching to next model...`);
+                await sleep(2000); // brief pause before trying next model
             } else {
-                // Tag the error so callers know it was a rate-limit exhaustion
-                if (is429) e.rateLimited = true;
                 throw e;
             }
         }
     }
+    // All models rate-limited — one final wait + retry on fastest model
+    console.warn('[AI] All models rate-limited, waiting 20s before final retry...');
+    await sleep(20000);
+    try {
+        return await groqCall(prompt, maxTokens, UPLOAD_MODELS[0]);
+    } catch (e) {
+        e.rateLimited = true;
+        throw e;
+    }
+}
+
+async function groqTutorWithRetry(prompt, maxTokens) {
+    for (const model of TUTOR_MODELS) {
+        try {
+            return await groqCall(prompt, maxTokens, model);
+        } catch (e) {
+            if (isRateLimitErr(e)) {
+                console.warn(`[AI] Rate limit on ${model} — switching to next model...`);
+                await sleep(2000);
+            } else {
+                throw e;
+            }
+        }
+    }
+    const err = new Error('Rate limit reached on all models. Please wait a moment and try again.');
+    err.rateLimited = true;
+    throw err;
 }
 
 // ── Supabase Admin Client (optional) ──────────────────────────────
@@ -238,8 +269,6 @@ async function groqCall(prompt, maxTokens, model) {
     content = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
     return content;
 }
-async function groq(prompt, maxTokens = 2048)     { return groqCall(prompt, maxTokens, 'llama-3.3-70b-versatile'); }
-async function groqFast(prompt, maxTokens = 2048) { return groqCall(prompt, maxTokens, 'llama-3.1-8b-instant');    }
 
 function parseJSON(raw, fallback) {
     if (!raw) return fallback;
@@ -586,7 +615,7 @@ Student's question: ${question}
 
 Answer:`;
 
-        const answer = await groq(prompt, 1500);
+        const answer = await groqTutorWithRetry(prompt, 1500);
         res.json({ answer, ragUsed, chunks: ragUsed ? allChunks.length : 0 });
     } catch (err) {
         console.error('Ask error:', err.message);

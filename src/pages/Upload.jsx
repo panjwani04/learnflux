@@ -13,6 +13,7 @@ function Upload() {
     const [stage, setStage] = useState('');
     const [error, setError] = useState(null);
     const [slowWarning, setSlowWarning] = useState(false);
+    const [canRetry, setCanRetry] = useState(false);
     const inputRef = useRef(null);
     const navigate = useNavigate();
     const { getToken } = useAuth();
@@ -39,6 +40,7 @@ function Upload() {
   const processFile = (selectedFile) => {
     if (selectedFile && selectedFile.type === "application/pdf") {
       setError(null);
+      setCanRetry(false);
       setFile(selectedFile);
       uploadToServer(selectedFile);
     } else {
@@ -147,9 +149,15 @@ const uploadToServer = async (selectedFile) => {
     clearTimeout(slowTimer);
     setSlowWarning(false);
     setUploading(false);
-    setFile(null);
     setProgress(0);
     setStage('');
+    const isRateLimit = err.message?.toLowerCase().includes('rate limit') || err.message?.includes('429');
+    if (isRateLimit) {
+      setCanRetry(true); // keep file so user can retry
+    } else {
+      setFile(null);
+      setCanRetry(false);
+    }
     setError(err.message);
   }
 };
@@ -165,6 +173,15 @@ const uploadToServer = async (selectedFile) => {
                         <AlertCircle size={18} />
                         <span>{error}</span>
                     </div>
+                )}
+
+                {canRetry && file && !uploading && (
+                    <button
+                        className="retry-btn"
+                        onClick={() => { setError(null); uploadToServer(file); }}
+                    >
+                        Retry with same file
+                    </button>
                 )}
 
                 <form

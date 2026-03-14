@@ -42,13 +42,27 @@ function Quiz() {
     const q = quiz[current];
     const isLast = current === quiz.length - 1;
 
+    // Normalize answer: AI sometimes returns full text instead of "A"/"B"/"C"/"D"
+    const getCorrectLetter = (question) => {
+        const ans = (question.answer || '').trim();
+        if (/^[A-D]$/i.test(ans)) return ans.toUpperCase();
+        const prefixMatch = ans.match(/^([A-D])[.)]\s*/i);
+        if (prefixMatch) return prefixMatch[1].toUpperCase();
+        const idx = question.options.findIndex(opt =>
+            opt.replace(/^[A-D][.)]\s*/i, '').trim().toLowerCase() === ans.toLowerCase()
+        );
+        return idx !== -1 ? String.fromCharCode(65 + idx) : ans;
+    };
+
+    const correctLetter = getCorrectLetter(q);
+
     const selectAnswer = (letter) => {
         if (selected !== null) return;
         setSelected(letter);
     };
 
     const next = () => {
-        const isCorrect = selected === q.answer;
+        const isCorrect = selected === correctLetter;
         const newAnswers = [...answers, { question: q.question, selected, correct: q.answer, isCorrect }];
         setAnswers(newAnswers);
         if (isCorrect) setScore(s => s + 1);
@@ -152,7 +166,7 @@ function Quiz() {
                         const letter = String.fromCharCode(65 + j);
                         let cls = 'option-btn';
                         if (selected !== null) {
-                            if (letter === q.answer) cls += ' correct';
+                            if (letter === correctLetter) cls += ' correct';
                             else if (letter === selected) cls += ' wrong';
                             else cls += ' dimmed';
                         }
@@ -160,16 +174,16 @@ function Quiz() {
                             <button key={j} className={cls} onClick={() => selectAnswer(letter)}>
                                 <span className="opt-letter">{letter}</span>
                                 <span className="opt-text">{opt.replace(/^[A-D]\.\s*/, '')}</span>
-                                {selected !== null && letter === q.answer && <CheckCircle size={16} className="opt-icon" />}
-                                {selected !== null && letter === selected && letter !== q.answer && <XCircle size={16} className="opt-icon" />}
+                                {selected !== null && letter === correctLetter && <CheckCircle size={16} className="opt-icon" />}
+                                {selected !== null && letter === selected && letter !== correctLetter && <XCircle size={16} className="opt-icon" />}
                             </button>
                         );
                     })}
                 </div>
 
                 {selected !== null && (
-                    <div className={`answer-feedback ${selected === q.answer ? 'correct' : 'wrong'}`}>
-                        {selected === q.answer ? '✓ Correct!' : `✗ Correct answer: ${q.answer}`}
+                    <div className={`answer-feedback ${selected === correctLetter ? 'correct' : 'wrong'}`}>
+                        {selected === correctLetter ? '✓ Correct!' : `✗ Correct answer: ${correctLetter}`}
                     </div>
                 )}
 
